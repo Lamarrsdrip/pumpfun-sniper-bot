@@ -306,12 +306,12 @@ function renderTicker(tokens) {
 
 function renderSourceStrip(health, config) {
   const sources = [
-    ['PumpPortal', health.PumpPortal || { status: config.pumpPortalApiKey ? 'connecting' : 'missing-key', message: 'Missing API key; public launch data only' }],
+    ['PumpPortal', health.PumpPortal || { status: config.pumpPortalApiKey ? 'connecting' : 'missing-key', message: 'Missing API key; public launch data only, trade subscriptions unavailable' }],
     ['DexScreener', health.DexScreener || { status: 'connecting' }],
     ['DexPairs', health.DexScreenerPairs || { status: 'connecting' }],
     ['Solana RPC', health.SolanaRPC || { status: 'connecting' }],
-    ['Holders', health.BirdeyeHolders || health.HolderRPC || { status: 'connecting' }],
-    ['Dev Monitor', health.HeliusDevActivity || { status: 'not-configured' }],
+    ['Holders', health.BirdeyeHolders || health.HolderRPC || { status: config.birdeyeApiKey ? 'connecting' : 'not-configured', message: config.birdeyeApiKey ? 'Holder enrichment pending' : 'Missing Birdeye key; limited holder signals only' }],
+    ['Dev Monitor', health.HeliusDevActivity || { status: config.heliusApiKey ? 'connecting' : 'not-configured', message: config.heliusApiKey ? 'Dev monitor pending' : 'Missing Helius key; dev wallet monitor unavailable' }],
     ['Execution', { status: config.mode === 'paper' ? 'paper-safe' : 'live-gated' }]
   ];
   els.sourceStrip.innerHTML = sources.map(([label, src]) => {
@@ -395,8 +395,10 @@ function renderTokenDetail(token) {
       <div><small>Liquidity</small><strong>${fixed(token.liquiditySol)} SOL</strong></div>
       <div><small>Holders</small><strong>${token.holderCount}</strong></div>
       <div><small>Top Holder</small><strong>${pct(token.topHolderPct || 0)}</strong></div>
-      <div><small>Holder Source</small><strong>${escapeHtml(token.holderSource || 'inferred')}</strong></div>
-      <div><small>Dev Activity</small><strong>${token.devActivity ? `${token.devActivity.recentTxCount} tx / ${token.devActivity.swaps} swaps` : 'not configured'}</strong></div>
+      <div><small>Holder Source</small><strong class="${token.holderSource ? '' : 'yellow'}">${escapeHtml(token.holderSource || 'Unavailable: add Birdeye/RPC data')}</strong></div>
+      <div><small>Dev Activity</small><strong class="${token.devActivity ? '' : 'yellow'}">${token.devActivity ? `${token.devActivity.recentTxCount} tx / ${token.devActivity.swaps} swaps` : 'Unavailable: add Helius key'}</strong></div>
+      <div><small>Mint Authority</small><strong class="yellow">Not verified without mint-account enrichment</strong></div>
+      <div><small>Freeze Authority</small><strong class="yellow">Not verified without mint-account enrichment</strong></div>
     </div>
     <canvas class="analysis-chart" width="520" height="190" data-chart-mint="${escapeAttr(token.mint)}"></canvas>
     <div class="zones">

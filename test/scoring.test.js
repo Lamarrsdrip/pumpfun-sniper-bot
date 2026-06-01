@@ -135,6 +135,22 @@ test('dashboard state API shape', () => {
   assert.ok('sourceHealth' in state);
 });
 
+test('status API shape keeps live trading disabled and key state explicit', () => {
+  const cfg = cloneConfig();
+  cfg.pumpPortalApiKey = '';
+  cfg.sources.heliusApiKey = '';
+  cfg.sources.birdeyeApiKey = '';
+  const { engine } = testEngine(cfg);
+  const status = engine.status();
+  assert.equal(status.ok, true);
+  assert.equal(status.app.running, true);
+  assert.equal(status.sources.pumpPortal.apiKey, 'missing');
+  assert.equal(status.sources.devActivity.heliusApiKey, 'missing');
+  assert.equal(status.sources.holders.birdeyeApiKey, 'missing');
+  assert.equal(status.broker.paper, true);
+  assert.equal(status.liveTrading.enabled, false);
+});
+
 function testTradeManager() {
   const cfg = cloneConfig();
   const events = new BotEvents();

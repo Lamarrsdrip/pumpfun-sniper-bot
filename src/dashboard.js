@@ -12,6 +12,10 @@ export function startDashboard({ config, engine, events }) {
       sendJson(res, engine.dashboardState());
       return;
     }
+    if (req.method === 'GET' && (url.pathname === '/health' || url.pathname === '/api/status')) {
+      sendJson(res, engine.status());
+      return;
+    }
     if (req.method === 'GET' && url.pathname === '/api/events') {
       sendJson(res, readJsonl(config.historyPath, 200));
       return;

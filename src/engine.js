@@ -285,6 +285,52 @@ export class SniperEngine {
     return { risk: this.config.risk, management: this.config.management, strictScoreThreshold: this.config.strictScoreThreshold };
   }
 
+  status() {
+    const sourceHealth = this.sourceHealth || {};
+    return {
+      ok: true,
+      app: {
+        running: true,
+        mode: this.config.mode,
+        dataMode: this.config.dataMode
+      },
+      sources: {
+        pumpPortal: {
+          status: sourceHealth.PumpPortal?.status || (this.config.pumpPortalApiKey ? 'connecting' : 'missing-key'),
+          apiKey: this.config.pumpPortalApiKey ? 'present' : 'missing',
+          message: sourceHealth.PumpPortal?.message || (this.config.pumpPortalApiKey ? 'waiting for stream health' : 'Missing PUMPPORTAL_API_KEY; public launch feed may work, token trade subscriptions are unavailable')
+        },
+        solanaRpc: {
+          status: sourceHealth.SolanaRPC?.status || 'connecting',
+          urlConfigured: Boolean(this.config.sources?.solanaRpcUrl),
+          slot: sourceHealth.SolanaRPC?.slot || null,
+          message: sourceHealth.SolanaRPC?.message || 'RPC health pending'
+        },
+        holders: {
+          status: sourceHealth.BirdeyeHolders?.status || sourceHealth.HolderRPC?.status || 'limited',
+          birdeyeApiKey: this.config.sources?.birdeyeApiKey ? 'present' : 'missing',
+          message: sourceHealth.BirdeyeHolders?.message || sourceHealth.HolderRPC?.message || (this.config.sources?.birdeyeApiKey ? 'Holder enrichment pending' : 'Missing BIRDEYE_API_KEY; holder detection uses limited RPC-derived placeholders where possible')
+        },
+        devActivity: {
+          status: sourceHealth.HeliusDevActivity?.status || 'not-configured',
+          heliusApiKey: this.config.sources?.heliusApiKey ? 'present' : 'missing',
+          message: sourceHealth.HeliusDevActivity?.message || (this.config.sources?.heliusApiKey ? 'Dev activity monitor pending' : 'Missing HELIUS_API_KEY; dev wallet transaction monitoring unavailable')
+        }
+      },
+      broker: {
+        paper: this.config.mode === 'paper',
+        cashSol: this.broker.cashSol,
+        equitySol: this.broker.equitySol,
+        openValueSol: this.broker.openValueSol,
+        feesSol: this.broker.feesSol
+      },
+      liveTrading: {
+        enabled: false,
+        reason: 'Live trading is intentionally disabled until a secure backend broker is implemented'
+      }
+    };
+  }
+
   dashboardState() {
     const closed = this.stats.wins + this.stats.losses;
     return {
@@ -302,6 +348,9 @@ export class SniperEngine {
         mode: this.config.mode,
         dataMode: this.config.dataMode,
         strictScoreThreshold: this.config.strictScoreThreshold,
+        pumpPortalApiKey: Boolean(this.config.pumpPortalApiKey),
+        heliusApiKey: Boolean(this.config.sources?.heliusApiKey),
+        birdeyeApiKey: Boolean(this.config.sources?.birdeyeApiKey),
         risk: this.config.risk,
         management: this.config.management
       },
