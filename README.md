@@ -7,7 +7,7 @@ Professional paper-first Pump.fun meme-coin sniper MVP. It is built for fast opp
 - `src/scanner-service.js`: PumpPortal, DexScreener, Solana RPC, holder, and dev-wallet feed orchestration.
 - `src/scoring.js`: 0-100 sniper score and hard block gates.
 - `src/risk.js`: max risk, daily loss, cooldown, open-position, and drawdown controls.
-- `src/broker.js`: paper execution model with fees and slippage. Live broker is disabled.
+- `src/broker.js`: paper execution model with fees and slippage, plus a gated external live-broker adapter.
 - `src/trade-manager.js`: staged profit-taking, hard stop, emergency exit, trailing stop.
 - `src/portfolio-manager.js`: equity curve, trade stats, risk alerts.
 - `src/dashboard.js`: dashboard API, SSE event stream, static terminal UI.
@@ -253,4 +253,4 @@ npm install
 MODE=paper DATA_MODE=hybrid PORT=8787 npm start
 ```
 
-For production VPS use, run behind a process manager and HTTPS reverse proxy. Keep private keys out of the app because live trading is disabled and no secure live broker exists yet.
+For production VPS use, run behind a process manager and HTTPS reverse proxy. Keep private keys out of this app. Real live execution must go through a separate audited broker service configured with `LIVE_TRADE_API_URL` and `LIVE_TRADE_API_KEY`.

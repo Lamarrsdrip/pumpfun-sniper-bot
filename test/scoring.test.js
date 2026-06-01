@@ -176,6 +176,21 @@ test('runtime mode switch changes broker and reports live readiness', () => {
   assert.equal(paper.mode, 'paper');
 });
 
+test('runtime mode switch rejects unconfigured live broker and keeps paper account', () => {
+  const cfg = cloneConfig();
+  cfg.mode = 'paper';
+  cfg.live.enabled = false;
+  cfg.live.tradeApiUrl = '';
+  cfg.live.tradeApiKey = '';
+  const { engine } = testEngine(cfg);
+  const startingEquity = engine.broker.equitySol;
+
+  assert.throws(() => engine.setMode('live'), /LIVE_TRADING_ENABLED is not true/);
+  assert.equal(engine.config.mode, 'paper');
+  assert.equal(engine.broker.equitySol, startingEquity);
+  assert.equal(engine.status().broker.paper, true);
+});
+
 function testTradeManager() {
   const cfg = cloneConfig();
   const events = new BotEvents();

@@ -55,6 +55,7 @@ const els = {
   blockedList: q('#blockedList'),
   toastStack: q('#toastStack')
 };
+els.appTabs = q('#appTabs');
 els.bestCoinSubtitle = q('#bestCoinSubtitle');
 els.bestCoinScore = q('#bestCoinScore');
 els.bestCoinCard = q('#bestCoinCard');
@@ -93,6 +94,7 @@ let walletConnected = false;
 let walletAddress = '';
 let riskPreset = 'balanced';
 let chartMode = 'realized';
+let activePage = 'trade';
 let swapCount = 0;
 let lastTokenScores = new Map();
 const eventMemory = [];
@@ -105,9 +107,15 @@ const presetProfiles = {
 };
 
 async function refresh() {
-  const state = await fetch('/api/state').then((r) => r.json());
-  latestState = state;
-  renderState(state);
+  try {
+    const response = await fetch('/api/state');
+    if (!response.ok) throw new Error(`state API ${response.status}`);
+    const state = await response.json();
+    latestState = state;
+    renderState(state);
+  } catch (error) {
+    setFeedOffline(error.message || 'state API unavailable');
+  }
 }
 
 function renderState(state) {
@@ -149,6 +157,8 @@ function renderState(state) {
     els.walletMenuEquity.textContent = `${fixed(equity)} SOL`;
     els.walletMenuHoldings.textContent = positions.length;
     els.walletMenuSwaps.textContent = swapCount;
+    els.walletMode.textContent = state.config.mode === 'live' ? 'Live Mode' : 'Paper Mode';
+    els.walletMeta.textContent = state.config.mode === 'live' ? 'Wallet connected / live broker gated' : 'Wallet connected / paper mode';
   }
   els.emergencyButton.textContent = state.config.emergencyStop ? 'Clear Stop' : 'Emergency Stop';
   els.emergencyButton.classList.toggle('armed', Boolean(state.config.emergencyStop));
@@ -166,6 +176,17 @@ function renderState(state) {
   renderAlerts(state.portfolio?.alerts || []);
   renderBlocked(state.watchedTokens || []);
   drawChart(state.portfolio?.equityCurve || [], positions);
+  renderPage();
+}
+
+function renderPage() {
+  document.querySelectorAll('[data-page-panel]').forEach((panel) => {
+    panel.classList.toggle('page-hidden', panel.dataset.pagePanel !== activePage);
+  });
+  if (!els.appTabs) return;
+  els.appTabs.querySelectorAll('button[data-page]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.page === activePage);
+  });
 }
 
 function renderBeginner(state) {
@@ -199,13 +220,14 @@ function renderBeginner(state) {
   els.simpleRugRisk.className = /High|Extreme/.test(best.rugRiskLevel || '') ? 'red' : best.rugRiskLevel === 'Medium' ? 'yellow' : 'green';
   els.simpleMomentum.textContent = `${Math.round(best.momentumScore || best.lastScore?.categories?.momentum || 0)}/100`;
   els.bestCoinCard.className = 'best-coin-card';
+  const hasBestPosition = positions.some((position) => position.mint === best.mint);
   els.bestCoinCard.innerHTML = `
     <div class="best-title"><strong>${tokenIcon(best)}${tokenName(best)}</strong><span class="state ${safeClass(best.status)}">${escapeHtml(best.status || 'WATCHING')}</span></div>
     <div class="contract-copy"><span>${escapeHtml(best.mint)}</span><button class="copy-chip" data-action="copy-mint" data-mint="${escapeAttr(best.mint)}">Copy Contract</button></div>
     <canvas class="analysis-chart" width="520" height="170"></canvas>
     <div class="best-actions">
       <button class="action-button profit" data-action="paper-buy" data-mint="${escapeAttr(best.mint)}">Paper Buy</button>
-      <button class="action-button" data-action="close" data-mint="${escapeAttr(best.mint)}">Paper Sell</button>
+      <button class="action-button" ${hasBestPosition ? `data-action="close" data-mint="${escapeAttr(best.mint)}"` : 'disabled'}>${hasBestPosition ? 'Paper Sell' : 'No Position'}</button>
       <button class="action-button" data-action="analyze" data-mint="${escapeAttr(best.mint)}">View Chart</button>
       <button class="action-button warn" data-action="block-reason" data-mint="${escapeAttr(best.mint)}">Block Reason</button>
       <button class="action-button ${liveButtonClass()}" data-action="live-buy" data-mint="${escapeAttr(best.mint)}">${liveButtonLabel()}</button>
@@ -325,8 +347,8 @@ function renderSourceStrip(health, config) {
     ['DexScreener', health.DexScreener || { status: 'connecting' }],
     ['DexPairs', health.DexScreenerPairs || { status: 'connecting' }],
     ['Solana RPC', health.SolanaRPC || { status: 'connecting' }],
-    ['Holders', health.BirdeyeHolders || health.HolderRPC || { status: config.birdeyeApiKey ? 'connecting' : 'not-configured', message: config.birdeyeApiKey ? 'Holder enrichment pending' : 'Missing Birdeye key; limited holder signals only' }],
-    ['Dev Monitor', health.HeliusDevActivity || { status: config.heliusApiKey ? 'connecting' : 'not-configured', message: config.heliusApiKey ? 'Dev monitor pending' : 'Missing Helius key; dev wallet monitor unavailable' }],
+    ['Holders', health.BirdeyeHolders || health.HolderRPC || { status: config.birdeyeApiKey || config.sources?.birdeyeApiKey ? 'connecting' : 'not-configured', message: config.birdeyeApiKey || config.sources?.birdeyeApiKey ? 'Holder enrichment pending' : 'Missing Birdeye key; limited holder signals only' }],
+    ['Dev Monitor', health.HeliusDevActivity || { status: config.heliusApiKey || config.sources?.heliusApiKey ? 'connecting' : 'not-configured', message: config.heliusApiKey || config.sources?.heliusApiKey ? 'Dev monitor pending' : 'Missing Helius key; dev wallet monitor unavailable' }],
     ['Execution', { status: config.mode === 'paper' ? 'paper-safe' : 'live-gated' }]
   ];
   els.sourceStrip.innerHTML = sources.map(([label, src]) => {
@@ -790,6 +812,12 @@ function setFeed(status) {
   els.connectionHealth.textContent = `heartbeat ${new Date().toLocaleTimeString()}`;
 }
 
+function setFeedOffline(detail) {
+  els.feedStatus.className = 'health-dot offline';
+  els.networkLabel.textContent = 'OFFLINE';
+  els.connectionHealth.textContent = detail || 'backend unavailable';
+}
+
 function toast(text) {
   const node = document.createElement('div');
   node.className = 'toast';
@@ -966,12 +994,17 @@ async function liveSell(mint, pct = 1, reason = 'manual live sell') {
 }
 
 async function apiPost(url, body) {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  return response.json();
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const payload = await response.json().catch(() => ({}));
+    return response.ok ? payload : { ok: false, error: payload.error || `${url} failed with ${response.status}` };
+  } catch (error) {
+    return { ok: false, error: error.message || 'backend unavailable' };
+  }
 }
 
 function markStep(id, state) {
@@ -983,7 +1016,11 @@ function markStep(id, state) {
 
 function addWalletActivity(title, detail) {
   const row = document.createElement('div');
-  row.innerHTML = `<small>${escapeHtml(title)}</small><strong>${escapeHtml(detail)}</strong>`;
+  const small = document.createElement('small');
+  small.textContent = title;
+  const strong = document.createElement('strong');
+  strong.textContent = detail;
+  row.append(small, strong);
   els.walletActivity.prepend(row);
   while (els.walletActivity.children.length > 8) els.walletActivity.lastChild.remove();
 }
@@ -1006,7 +1043,15 @@ function age(ms) { return `${Math.max(0, Math.round(Number(ms || 0) / 1000))}s`;
 function short(value = '') { return value ? `${String(value).slice(0, 5)}...${String(value).slice(-4)}` : '--'; }
 function tokenName(t) { return escapeHtml(t.symbol || t.name || short(t.mint)); }
 function tokenIcon(t) {
-  if (t.icon) return `<img src="${escapeAttr(t.icon)}" alt="" style="width:18px;height:18px;border-radius:50%;vertical-align:-4px;margin-right:6px;">`;
+  const src = safeImageUrl(t.icon);
+  if (src) return `<img src="${escapeAttr(src)}" alt="" style="width:18px;height:18px;border-radius:50%;vertical-align:-4px;margin-right:6px;">`;
+  return '';
+}
+function safeImageUrl(value = '') {
+  const src = String(value || '').trim();
+  if (!src) return '';
+  if (/^https?:\/\//i.test(src)) return src;
+  if (/^data:image\/(png|jpeg|jpg|gif|webp);base64,/i.test(src)) return src;
   return '';
 }
 function scoreClass(score, threshold) {
@@ -1042,11 +1087,11 @@ els.walletButton.addEventListener('click', async () => {
     walletConnected = true;
     els.walletButton.classList.add('connected');
     els.walletLabel.textContent = short(walletAddress);
-    els.walletMeta.textContent = 'Wallet connected / paper trading only';
+    els.walletMeta.textContent = latestState?.config?.mode === 'live' ? 'Wallet connected / live broker gated' : 'Wallet connected / paper mode';
     els.walletBalance.textContent = 'balance not loaded';
     els.walletMenuAddress.textContent = walletAddress;
-    els.walletMode.textContent = 'Paper Mode';
-    addWalletActivity('Wallet connected', `${short(walletAddress)} / live trading disabled`);
+    els.walletMode.textContent = latestState?.config?.mode === 'live' ? 'Live Mode' : 'Paper Mode';
+    addWalletActivity('Wallet connected', `${short(walletAddress)} / ${els.walletMode.textContent}`);
     toast('Wallet connected');
   } catch (error) {
     els.walletMeta.textContent = 'Wallet connection rejected';
@@ -1070,7 +1115,7 @@ els.disconnectWallet.addEventListener('click', () => {
   walletAddress = '';
   els.walletButton.classList.remove('connected');
   els.walletLabel.textContent = 'Connect Wallet';
-  els.walletMeta.textContent = 'Paper mode: no funds at risk';
+  els.walletMeta.textContent = 'Paper mode active';
   els.walletBalance.textContent = '--';
   els.walletMenu.classList.add('hidden');
 });
@@ -1112,6 +1157,9 @@ document.body.addEventListener('click', (event) => {
     else if (action === 'open-pump') openUrl(`https://pump.fun/${encodeURIComponent(mint)}`);
     else if (action === 'open-dex') openUrl(`https://dexscreener.com/solana/${encodeURIComponent(mint)}`);
     else if (action === 'open-solscan') openUrl(`https://solscan.io/token/${encodeURIComponent(mint)}`);
+    else if (action === 'analyze') {
+      document.querySelector('.analysis-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
     else if (action === 'live-buy') openExecutionModal(token, 'live');
     else if (action === 'paper-buy') openExecutionModal(token, 'paper');
     else if (action === 'confirm-paper-buy') confirmPaperBuy(mint);
@@ -1166,6 +1214,13 @@ els.riskPresets.addEventListener('click', (event) => {
   applyRiskPreset(riskPreset);
 });
 
+els.appTabs.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-page]');
+  if (!button) return;
+  activePage = button.dataset.page;
+  renderPage();
+});
+
 els.modeSwitch.addEventListener('click', async (event) => {
   const button = event.target.closest('button[data-mode-option]');
   if (!button) return;
@@ -1185,6 +1240,18 @@ document.querySelectorAll('[data-chart]').forEach((button) => {
 });
 
 const source = new EventSource('/stream');
-source.onmessage = (message) => addEvent(JSON.parse(message.data));
+source.onopen = () => {
+  if (latestState) setFeed(latestState.config.dataMode === 'mock' ? 'mock-live' : 'connected');
+};
+source.onmessage = (message) => {
+  try {
+    addEvent(JSON.parse(message.data));
+  } catch (error) {
+    setFeedOffline(`bad stream event: ${error.message}`);
+  }
+};
+source.onerror = () => {
+  setFeedOffline('event stream reconnecting');
+};
 refresh();
 setInterval(refresh, 1600);

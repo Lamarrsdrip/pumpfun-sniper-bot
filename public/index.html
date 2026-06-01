@@ -11,7 +11,7 @@
       <header class="command-header">
         <div class="brand">
           <div class="logo-mark">PF</div>
-          <div><h1>Pump.fun Sniper</h1><p>Paper-first meme trading scanner with strict risk controls.</p></div>
+          <div><h1>Pump.fun Sniper</h1><p>Meme trading scanner with strict risk controls and paper-first validation.</p></div>
         </div>
 
         <section class="account-console">
@@ -19,7 +19,7 @@
             <span class="wallet-dot"></span>
             <span>
               <strong id="walletLabel">Connect Wallet</strong>
-              <small><span id="walletMeta">Paper mode: no funds at risk</span> <span id="walletBalance">--</span></small>
+              <small><span id="walletMeta">Paper mode active</span> <span id="walletBalance">--</span></small>
             </span>
           </button>
           <div class="header-stat"><small>Total Equity</small><strong id="equity">0.0000</strong></div>
@@ -38,18 +38,26 @@
         </section>
       </header>
 
-      <section class="onboarding panel" id="onboarding">
-        <div class="onboard-step active"><small>1</small><strong>Connect Wallet</strong><span>Start with a paper-safe wallet session.</span></div>
-        <div class="onboard-step"><small>2</small><strong>Choose Paper Mode</strong><span>Live trading stays disabled.</span></div>
+      <nav class="app-tabs" id="appTabs" aria-label="App sections">
+        <button class="active" data-page="trade">Trade</button>
+        <button data-page="scanner">Scanner</button>
+        <button data-page="positions">Positions</button>
+        <button data-page="risk">Risk</button>
+        <button data-page="advanced">Advanced</button>
+      </nav>
+
+      <section class="onboarding panel app-page" data-page-panel="trade" id="onboarding">
+        <div class="onboard-step active"><small>1</small><strong>Connect Wallet</strong><span>Connect Phantom or Solflare for account identity.</span></div>
+        <div class="onboard-step"><small>2</small><strong>Choose Mode</strong><span>Paper is default; live needs a configured backend broker.</span></div>
         <div class="onboard-step"><small>3</small><strong>Start Scanner</strong><span>Watch real source status.</span></div>
         <div class="onboard-step"><small>4</small><strong>Review Token</strong><span>Check score, risk, and chart.</span></div>
         <div class="onboard-step"><small>5</small><strong>Paper Buy/Sell</strong><span>Execute through backend paper endpoints.</span></div>
       </section>
 
-      <section class="source-strip" id="sourceStrip"></section>
+      <section class="source-strip app-page" data-page-panel="advanced" id="sourceStrip"></section>
       <section class="ticker-tape hidden" id="tickerTape"></section>
 
-      <section class="beginner-grid">
+      <section class="beginner-grid app-page" data-page-panel="trade">
         <article class="panel best-panel">
           <div class="panel-head">
             <div><h2>Best Coin Now</h2><p id="bestCoinSubtitle">Waiting for scanner data</p></div>
@@ -67,8 +75,8 @@
         </article>
       </section>
 
-      <details class="advanced-shell">
-        <summary>Advanced account metrics</summary>
+      <details class="advanced-shell app-page" data-page-panel="advanced">
+        <summary>Account metrics</summary>
       <section class="money-strip">
         <article><small>Open Risk</small><strong id="openRisk">0.0000</strong><span>SOL deployed</span></article>
         <article><small>Unrealized</small><strong id="unrealizedPnl">0.0000</strong><span>live mark</span></article>
@@ -79,8 +87,8 @@
       </section>
       </details>
 
-      <details class="advanced-shell">
-        <summary>Advanced market intelligence</summary>
+      <details class="advanced-shell app-page" data-page-panel="advanced" open>
+        <summary>Market intelligence</summary>
       <section class="intel-grid">
         <article class="intel-card">
           <div><small>Market Regime</small><strong id="marketRegime">--</strong><span id="marketRegimeDetail">Waiting for live flow</span></div>
@@ -97,7 +105,7 @@
       </section>
       </details>
 
-      <section class="main-grid">
+      <section class="main-grid app-page" data-page-panel="scanner">
         <section class="panel scanner-panel">
           <div class="panel-head">
             <div>
@@ -144,8 +152,8 @@
         </aside>
       </section>
 
-      <details class="advanced-shell">
-        <summary>Advanced opportunity queue and missed-run learning</summary>
+      <details class="advanced-shell app-page" data-page-panel="advanced" open>
+        <summary>Opportunity queue and missed-run learning</summary>
       <section class="panel alpha-panel">
         <div class="panel-head">
           <div><h2>Alpha Queue</h2><p>Ranked opportunities, near misses, and why the bot is waiting or engaging</p></div>
@@ -159,7 +167,7 @@
       </section>
       </details>
 
-      <section class="positions-grid">
+      <section class="positions-grid app-page" data-page-panel="positions">
         <section class="panel positions-panel">
           <div class="panel-head">
             <div><h2>Active Execution</h2><p id="positionCount">0 open positions</p></div>
@@ -182,7 +190,7 @@
         </section>
       </section>
 
-      <section class="bottom-grid simple-bottom">
+      <section class="bottom-grid simple-bottom app-page" data-page-panel="risk">
         <section class="panel risk-panel">
           <div class="panel-head">
             <div><h2>Risk Console</h2><p>Capital protection is wired into execution</p></div>
@@ -198,7 +206,7 @@
           <div id="riskImpact" class="risk-impact"></div>
         </section>
 
-        <details class="panel logs-panel advanced-panel">
+        <details class="panel logs-panel advanced-panel app-page" data-page-panel="advanced">
           <summary>Advanced execution logs</summary>
           <div class="panel-head">
             <div><h2>Execution Feed</h2><p>Scanner, risk, wallet, and profit events</p></div>
@@ -207,7 +215,7 @@
           <div id="events" class="events"></div>
         </details>
 
-        <details class="panel protection-panel advanced-panel">
+        <details class="panel protection-panel advanced-panel app-page" data-page-panel="advanced">
           <summary>Protection actions and blocked tokens</summary>
           <div class="panel-head">
             <div><h2>Protection Actions</h2><p>Automatic blocks and danger alerts</p></div>

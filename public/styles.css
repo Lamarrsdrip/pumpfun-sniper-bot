@@ -44,6 +44,12 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  filter: grayscale(0.35);
+}
+
 .shell {
   width: min(1840px, calc(100vw - 24px));
   margin: 0 auto;
@@ -163,6 +169,10 @@ p, small, label { color: var(--muted); }
   box-shadow: 0 0 0 5px rgba(39, 231, 162, 0.09), 0 0 18px rgba(39, 231, 162, 0.7);
   animation: pulse 1.5s infinite;
 }
+.health-dot.offline {
+  background: var(--red);
+  box-shadow: 0 0 0 5px rgba(255, 81, 102, 0.12);
+}
 .wallet-card strong, .header-stat strong, .health strong { display: block; font-size: 13px; }
 .wallet-card small, .header-stat small, .health small { display: block; margin-top: 2px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -258,6 +268,36 @@ p, small, label { color: var(--muted); }
   animation: slideIn 260ms ease both;
 }
 .ticker-chip strong { color: var(--text); }
+
+.app-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin: 10px 0;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(8, 13, 18, 0.96);
+  backdrop-filter: blur(10px);
+}
+.app-tabs button {
+  min-height: 38px;
+  border-radius: 7px;
+  background: rgba(255,255,255,0.03);
+  color: var(--muted);
+  font-weight: 850;
+}
+.app-tabs button.active {
+  background: var(--green-soft);
+  color: var(--green);
+  border: 1px solid rgba(39,231,162,0.35);
+}
+.page-hidden {
+  display: none !important;
+}
 
 .money-strip {
   display: grid;
@@ -1265,6 +1305,7 @@ p, small, label { color: var(--muted); }
   }
 
   .command-header,
+  .app-tabs,
   .account-console,
   .onboarding,
   .source-strip,
@@ -1286,6 +1327,16 @@ p, small, label { color: var(--muted); }
   .money-strip article {
     border-radius: 8px;
     box-shadow: none;
+  }
+
+  .app-tabs {
+    grid-template-columns: repeat(5, minmax(58px, 1fr)) !important;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .app-tabs button {
+    min-width: 68px;
   }
 
   .brand {

@@ -1,7 +1,7 @@
 import { loadConfig } from './config.js';
 import { BotEvents } from './events.js';
 import { JsonlLogger } from './logger.js';
-import { PaperBroker, DisabledLiveBroker, LiveBroker } from './broker.js';
+import { PaperBroker, LiveBroker } from './broker.js';
 import { RiskManager } from './risk.js';
 import { TradeManager } from './trade-manager.js';
 import { SniperEngine } from './engine.js';
@@ -11,10 +11,14 @@ import { ScannerService } from './scanner-service.js';
 import { PortfolioManager } from './portfolio-manager.js';
 
 const config = loadConfig();
+if (config.mode === 'live' && !liveBrokerConfigured(config)) {
+  console.warn(`Live mode requested but not ready: ${liveReadinessReason(config)}. Starting in paper mode.`);
+  config.mode = 'paper';
+}
 const events = new BotEvents();
 const logger = new JsonlLogger(config.historyPath);
 const broker = config.mode === 'live'
-  ? config.live?.enabled ? new LiveBroker(config) : new DisabledLiveBroker(config)
+  ? new LiveBroker(config)
   : new PaperBroker(config.paperStartingSol);
 const risk = new RiskManager(config);
 const tradeManager = new TradeManager(config, broker, events);
@@ -60,4 +64,15 @@ function sanitizeEvent(event) {
     if (key === 'events') return undefined;
     return value;
   }));
+}
+
+function liveBrokerConfigured(config) {
+  return Boolean(config.live?.enabled && config.live?.tradeApiUrl && config.live?.tradeApiKey);
+}
+
+function liveReadinessReason(config) {
+  if (!config.live?.enabled) return 'LIVE_TRADING_ENABLED is not true';
+  if (!config.live?.tradeApiUrl) return 'LIVE_TRADE_API_URL is missing';
+  if (!config.live?.tradeApiKey) return 'LIVE_TRADE_API_KEY is missing';
+  return config.live?.dryRun ? 'Live broker configured in dry-run mode' : 'Live broker configured';
 }

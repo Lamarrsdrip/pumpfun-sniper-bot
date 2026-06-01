@@ -1,6 +1,6 @@
 import { TokenState } from './token-state.js';
 import { blockReasons, rugRiskLevel, scoreToken } from './scoring.js';
-import { DisabledLiveBroker, LiveBroker, PaperBroker } from './broker.js';
+import { LiveBroker, PaperBroker } from './broker.js';
 
 export class SniperEngine {
   constructor({ config, events, risk, tradeManager, broker, portfolio }) {
@@ -343,9 +343,12 @@ export class SniperEngine {
   setMode(mode) {
     if (!['paper', 'live'].includes(mode)) throw new Error('mode must be paper or live');
     if (this.tradeManager.positions.size) throw new Error('close open positions before switching mode');
+    if (mode === 'live' && !liveBrokerConfigured(this.config)) {
+      throw new Error(liveReadinessReason({ ...this.config, mode: 'live' }));
+    }
     this.config.mode = mode;
     this.broker = mode === 'live'
-      ? this.config.live?.enabled ? new LiveBroker(this.config) : new DisabledLiveBroker(this.config)
+      ? new LiveBroker(this.config)
       : new PaperBroker(this.config.paperStartingSol);
     this.tradeManager.broker = this.broker;
     this.events.emit('mode:changed', {
@@ -498,6 +501,10 @@ function liveReadinessReason(config) {
   if (!config.live?.tradeApiKey) return 'LIVE_TRADE_API_KEY is missing';
   if (config.live?.dryRun) return 'Live broker configured in dry-run mode';
   return 'Live broker configured for real broadcast through external provider';
+}
+
+function liveBrokerConfigured(config) {
+  return Boolean(config.live?.enabled && config.live?.tradeApiUrl && config.live?.tradeApiKey);
 }
 
 function buildIntelligence({ tokens, positions, sourceHealth, threshold, risk }) {
