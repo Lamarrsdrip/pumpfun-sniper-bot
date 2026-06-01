@@ -19,7 +19,7 @@ const tradeManager = new TradeManager(config, broker, events);
 const portfolio = new PortfolioManager(config.paperStartingSol);
 const engine = new SniperEngine({ config, events, risk, tradeManager, broker, portfolio });
 
-for (const name of ['token:seen', 'token:watching', 'token:qualified', 'token:blocked', 'trade:open', 'trade:partialExit', 'trade:close', 'feed:status', 'feed:sourceHealth', 'feed:migration', 'feed:error']) {
+for (const name of ['token:seen', 'token:watching', 'token:qualified', 'token:blocked', 'trade:open', 'trade:add', 'trade:partialExit', 'trade:close', 'feed:status', 'feed:sourceHealth', 'feed:migration', 'feed:error']) {
   events.on(name, (event) => logger.write(sanitizeEvent(event)));
 }
 
@@ -43,6 +43,11 @@ events.on('feed:trade', (trade) => engine.onTrade(trade).catch((error) => events
 events.on('feed:marketSnapshot', (snapshot) => engine.onMarketSnapshot(snapshot).catch((error) => events.emit('feed:error', { message: error.message })));
 events.on('feed:sourceHealth', (health) => {
   engine.sourceHealth = { ...(engine.sourceHealth || {}), [health.source]: health };
+});
+events.on('feed:status', (status) => {
+  if (!status.source) return;
+  const source = status.source === 'pumpportal' ? 'PumpPortal' : status.source;
+  engine.sourceHealth = { ...(engine.sourceHealth || {}), [source]: { ...status, updatedAt: Date.now() } };
 });
 const scanner = new ScannerService({ config, events });
 scanner.start();

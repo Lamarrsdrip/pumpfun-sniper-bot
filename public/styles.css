@@ -1058,3 +1058,158 @@ p, small, label { color: var(--muted); }
   .position-metrics, .zones, .breakdown, .risk-impact { grid-template-columns: 1fr; }
   .intel-grid, .alpha-queue { grid-template-columns: 1fr; }
 }
+
+.onboarding,
+.beginner-grid {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0;
+}
+.onboarding {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.beginner-grid {
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+}
+.onboard-step,
+.simple-status > div,
+.learning-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.025);
+  padding: 10px;
+  min-width: 0;
+}
+.onboard-step small {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  color: var(--soft);
+}
+.onboard-step strong,
+.onboard-step span,
+.simple-status small,
+.simple-status strong,
+.learning-row strong,
+.learning-row small {
+  display: block;
+}
+.onboard-step strong { margin-top: 8px; font-size: 13px; }
+.onboard-step span { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.35; }
+.onboard-step.active { border-color: rgba(43,217,239,0.45); background: rgba(43,217,239,0.06); }
+.onboard-step.done { border-color: rgba(39,231,162,0.42); background: rgba(39,231,162,0.055); }
+.simple-status {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.simple-status small { color: var(--muted); font-size: 11px; }
+.simple-status strong { margin-top: 5px; line-height: 1.25; }
+.best-coin-card {
+  min-height: 310px;
+}
+.best-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.best-title strong { font-size: 20px; }
+.best-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.advanced-shell {
+  margin: 10px 0;
+}
+.advanced-shell > summary,
+.advanced-panel > summary {
+  list-style: none;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.025);
+  padding: 10px 12px;
+  color: var(--soft);
+  font-weight: 800;
+}
+.advanced-shell > summary::-webkit-details-marker,
+.advanced-panel > summary::-webkit-details-marker { display: none; }
+.advanced-shell > summary::after,
+.advanced-panel > summary::after {
+  content: "Open";
+  float: right;
+  color: var(--muted);
+  font-weight: 600;
+}
+.advanced-shell[open] > summary::after,
+.advanced-panel[open] > summary::after { content: "Close"; }
+.learning-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.learning-grid h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.learning-list {
+  display: grid;
+  gap: 7px;
+}
+.learning-row strong {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.learning-row small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+.empty-mini {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--muted);
+}
+.empty-row {
+  padding: 22px;
+  color: var(--muted);
+  text-align: center;
+}
+.source-strip { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.command-header { grid-template-columns: minmax(280px, 0.55fr) minmax(620px, 1.45fr); }
+.account-console { grid-template-columns: minmax(220px, 1.25fr) repeat(3, minmax(112px, 0.55fr)) minmax(160px, 0.78fr) minmax(118px, 0.5fr) minmax(140px, 0.62fr); }
+.danger-button,
+.action-button,
+.presets button,
+.state { text-transform: none; }
+.row-actions { flex-wrap: wrap; }
+.mini-button { min-width: 74px; font-size: 11px; }
+.bottom-grid.simple-bottom { grid-template-columns: minmax(320px, 0.8fr) minmax(0, 1fr); }
+
+@media (max-width: 1320px) {
+  .beginner-grid,
+  .bottom-grid.simple-bottom { grid-template-columns: 1fr; }
+  .source-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .onboarding { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .account-console,
+  .source-strip,
+  .onboarding,
+  .simple-status,
+  .learning-grid { grid-template-columns: 1fr; }
+  .scanner-table { min-width: 760px; }
+  .presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .execution-grid, .token-facts { grid-template-columns: 1fr; }
+  .wallet-menu { top: 8px; right: 7px; }
+}

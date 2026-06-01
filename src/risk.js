@@ -21,12 +21,16 @@ export class RiskManager {
     return reasons;
   }
 
-  sizePosition(snapshot) {
+  sizePosition(snapshot, score = null) {
     const r = this.config.risk;
     const stopLossPct = this.config.management.hardStopLossPct;
     const riskBased = r.maxRiskPerTradeSol / Math.max(stopLossPct, 0.01);
     const liquidityBased = Math.max(0.01, snapshot.liquiditySol * 0.015);
-    return Math.max(0, Math.min(r.maxPositionSizeSol, riskBased, liquidityBased));
+    const signalQuality = score?.score ? Math.max(0.35, Math.min(1, score.score / 100)) : 0.75;
+    const volatilityPenalty = Math.max(0.35, 1 - Number(snapshot.drawdownFromHighPct || 0) * 1.8);
+    const slippagePenalty = Math.max(0.25, Math.min(1, Number(snapshot.liquidityQuality || 0) / 100));
+    const size = Math.min(r.maxPositionSizeSol, riskBased, liquidityBased) * signalQuality * volatilityPenalty * slippagePenalty;
+    return Math.max(0, size);
   }
 
   observeClosedTrade(pnlSol, at = Date.now()) {

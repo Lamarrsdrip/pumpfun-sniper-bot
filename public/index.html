@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Pump.fun Sniper Command Center</title>
+    <title>Pump.fun Sniper</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
@@ -11,10 +11,7 @@
       <header class="command-header">
         <div class="brand">
           <div class="logo-mark">PF</div>
-          <div>
-            <h1>Pump.fun Sniper Command</h1>
-            <p>Real-time paper execution, capital protection, and strict opportunity scoring.</p>
-          </div>
+          <div><h1>Pump.fun Sniper</h1><p>Paper-first meme trading scanner with strict risk controls.</p></div>
         </div>
 
         <section class="account-console">
@@ -22,10 +19,9 @@
             <span class="wallet-dot"></span>
             <span>
               <strong id="walletLabel">Connect Wallet</strong>
-              <small id="walletMeta">Paper mode: no funds at risk</small>
+              <small><span id="walletMeta">Paper mode: no funds at risk</span> <span id="walletBalance">--</span></small>
             </span>
           </button>
-          <div class="header-stat"><small>Wallet SOL</small><strong id="walletBalance">--</strong></div>
           <div class="header-stat"><small>Total Equity</small><strong id="equity">0.0000</strong></div>
           <div class="header-stat"><small>Today PnL</small><strong id="pnl">0.0000</strong></div>
           <div class="header-stat"><small>Positions</small><strong id="activePositions">0</strong></div>
@@ -33,14 +29,42 @@
             <span id="feedStatus" class="health-dot"></span>
             <div><strong id="networkLabel">SYNCING</strong><small id="connectionHealth">stream pending</small></div>
           </div>
-          <span id="mode" class="mode-pill">PAPER</span>
+          <span id="mode" class="mode-pill">Live Disabled</span>
           <button id="emergencyButton" class="danger-button">Emergency Stop</button>
         </section>
       </header>
 
-      <section class="ticker-tape" id="tickerTape"></section>
-      <section class="source-strip" id="sourceStrip"></section>
+      <section class="onboarding panel" id="onboarding">
+        <div class="onboard-step active"><small>1</small><strong>Connect Wallet</strong><span>Start with a paper-safe wallet session.</span></div>
+        <div class="onboard-step"><small>2</small><strong>Choose Paper Mode</strong><span>Live trading stays disabled.</span></div>
+        <div class="onboard-step"><small>3</small><strong>Start Scanner</strong><span>Watch real source status.</span></div>
+        <div class="onboard-step"><small>4</small><strong>Review Token</strong><span>Check score, risk, and chart.</span></div>
+        <div class="onboard-step"><small>5</small><strong>Paper Buy/Sell</strong><span>Execute through backend paper endpoints.</span></div>
+      </section>
 
+      <section class="source-strip" id="sourceStrip"></section>
+      <section class="ticker-tape hidden" id="tickerTape"></section>
+
+      <section class="beginner-grid">
+        <article class="panel best-panel">
+          <div class="panel-head">
+            <div><h2>Best Coin Now</h2><p id="bestCoinSubtitle">Waiting for scanner data</p></div>
+            <span id="bestCoinScore" class="score-badge">--</span>
+          </div>
+          <div id="bestCoinCard" class="best-coin-card empty-state">No qualified token yet. Connect sources and start with paper mode.</div>
+        </article>
+        <article class="panel simple-status">
+          <div><small>Entry reason</small><strong id="simpleEntryReason">No entry yet</strong></div>
+          <div><small>Avoid reason</small><strong id="simpleAvoidReason">Waiting for signal</strong></div>
+          <div><small>Rug risk</small><strong id="simpleRugRisk">--</strong></div>
+          <div><small>Momentum</small><strong id="simpleMomentum">--</strong></div>
+          <div><small>Active PnL</small><strong id="simpleActivePnl">0.0000 SOL</strong></div>
+          <div><small>Scanner status</small><strong id="simpleScannerStatus">Syncing</strong></div>
+        </article>
+      </section>
+
+      <details class="advanced-shell">
+        <summary>Advanced account metrics</summary>
       <section class="money-strip">
         <article><small>Open Risk</small><strong id="openRisk">0.0000</strong><span>SOL deployed</span></article>
         <article><small>Unrealized</small><strong id="unrealizedPnl">0.0000</strong><span>live mark</span></article>
@@ -49,7 +73,10 @@
         <article><small>Fees + Slip</small><strong id="fees">0.0000</strong><span>paper estimate</span></article>
         <article><small>Health</small><strong id="healthScore">--</strong><span>execution stack</span></article>
       </section>
+      </details>
 
+      <details class="advanced-shell">
+        <summary>Advanced market intelligence</summary>
       <section class="intel-grid">
         <article class="intel-card">
           <div><small>Market Regime</small><strong id="marketRegime">--</strong><span id="marketRegimeDetail">Waiting for live flow</span></div>
@@ -64,6 +91,7 @@
           <div><small>Run Capture</small><strong id="runCaptureHeadline">No clean run forming</strong><span id="runCaptureDetail">Watching for acceleration without chasing unsafe candles.</span></div>
         </article>
       </section>
+      </details>
 
       <section class="main-grid">
         <section class="panel scanner-panel">
@@ -87,17 +115,12 @@
           <table class="scanner-table">
             <thead>
               <tr>
-                <th data-sort="status">State</th>
                 <th data-sort="symbol">Token</th>
-                <th data-sort="ageMs">Age</th>
-                <th data-sort="marketCapSol">MCap</th>
-                <th data-sort="bondingCurveProgress">Curve</th>
-                <th data-sort="buyVolumeSol">Volume</th>
-                <th data-sort="buySellRatio">Pressure</th>
-                <th data-sort="holderCount">Holders</th>
-                <th>Chart</th>
-                <th data-sort="rugRiskScore">Risk</th>
                 <th data-sort="score">Score</th>
+                <th data-sort="rugRiskScore">Risk</th>
+                <th data-sort="buyVolumeSol">Volume</th>
+                <th data-sort="status">Status</th>
+                <th>Chart</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -117,13 +140,20 @@
         </aside>
       </section>
 
+      <details class="advanced-shell">
+        <summary>Advanced opportunity queue and missed-run learning</summary>
       <section class="panel alpha-panel">
         <div class="panel-head">
           <div><h2>Alpha Queue</h2><p>Ranked opportunities, near misses, and why the bot is waiting or engaging</p></div>
           <span id="alphaCount">0 queued</span>
         </div>
         <div id="alphaQueue" class="alpha-queue"></div>
+        <div class="learning-grid">
+          <div><h3>Blocked trades that later ran</h3><div id="blockedRanList" class="learning-list"></div></div>
+          <div><h3>Missed runs</h3><div id="missedRunList" class="learning-list"></div></div>
+        </div>
       </section>
+      </details>
 
       <section class="positions-grid">
         <section class="panel positions-panel">
@@ -148,7 +178,7 @@
         </section>
       </section>
 
-      <section class="bottom-grid">
+      <section class="bottom-grid simple-bottom">
         <section class="panel risk-panel">
           <div class="panel-head">
             <div><h2>Risk Console</h2><p>Capital protection is wired into execution</p></div>
@@ -164,22 +194,24 @@
           <div id="riskImpact" class="risk-impact"></div>
         </section>
 
-        <section class="panel logs-panel">
+        <details class="panel logs-panel advanced-panel">
+          <summary>Advanced execution logs</summary>
           <div class="panel-head">
             <div><h2>Execution Feed</h2><p>Scanner, risk, wallet, and profit events</p></div>
             <span id="eventCount">0 events</span>
           </div>
           <div id="events" class="events"></div>
-        </section>
+        </details>
 
-        <section class="panel protection-panel">
+        <details class="panel protection-panel advanced-panel">
+          <summary>Protection actions and blocked tokens</summary>
           <div class="panel-head">
             <div><h2>Protection Actions</h2><p>Automatic blocks and danger alerts</p></div>
             <span>capital saved</span>
           </div>
           <div id="alerts" class="alert-list"></div>
           <div id="blockedList" class="blocked-list"></div>
-        </section>
+        </details>
       </section>
 
       <div id="toastStack" class="toast-stack"></div>

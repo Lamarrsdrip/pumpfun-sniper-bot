@@ -4,6 +4,8 @@ export class PortfolioManager {
     this.equityCurve = [{ at: Date.now(), equitySol: startingEquitySol, realizedPnlSol: 0 }];
     this.closedTrades = [];
     this.alerts = [];
+    this.highWaterSol = startingEquitySol;
+    this.maxDrawdownSol = 0;
   }
 
   recordTradeClose(event, equitySol) {
@@ -13,6 +15,8 @@ export class PortfolioManager {
   }
 
   recordEquity(at, equitySol, realizedPnlSol = 0) {
+    this.highWaterSol = Math.max(this.highWaterSol, equitySol);
+    this.maxDrawdownSol = Math.max(this.maxDrawdownSol, this.highWaterSol - equitySol);
     this.equityCurve.push({ at, equitySol, realizedPnlSol });
     if (this.equityCurve.length > 300) this.equityCurve.shift();
   }
@@ -33,7 +37,8 @@ export class PortfolioManager {
       winRate: this.closedTrades.length ? wins.length / this.closedTrades.length : 0,
       averageWinSol: wins.length ? wins.reduce((total, trade) => total + trade.pnlSol, 0) / wins.length : 0,
       averageLossSol: losses.length ? losses.reduce((total, trade) => total + trade.pnlSol, 0) / losses.length : 0,
-      totalPnlSol
+      totalPnlSol,
+      maxDrawdownSol: this.maxDrawdownSol
     };
   }
 }

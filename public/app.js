@@ -54,6 +54,17 @@ const els = {
   blockedList: q('#blockedList'),
   toastStack: q('#toastStack')
 };
+els.bestCoinSubtitle = q('#bestCoinSubtitle');
+els.bestCoinScore = q('#bestCoinScore');
+els.bestCoinCard = q('#bestCoinCard');
+els.simpleEntryReason = q('#simpleEntryReason');
+els.simpleAvoidReason = q('#simpleAvoidReason');
+els.simpleRugRisk = q('#simpleRugRisk');
+els.simpleMomentum = q('#simpleMomentum');
+els.simpleActivePnl = q('#simpleActivePnl');
+els.simpleScannerStatus = q('#simpleScannerStatus');
+els.blockedRanList = q('#blockedRanList');
+els.missedRunList = q('#missedRunList');
 
 els.walletMenu = q('#walletMenu');
 els.walletMenuAddress = q('#walletMenuAddress');
@@ -85,10 +96,10 @@ let lastTokenScores = new Map();
 const eventMemory = [];
 
 const presetProfiles = {
-  safe: { risk: 0.5, freq: 'Low', drawdown: 'Lowest', label: 'Maximum selectivity' },
-  balanced: { risk: 1, freq: 'Medium', drawdown: 'Controlled', label: 'Default paper sniper' },
-  sniper: { risk: 1.25, freq: 'Medium+', drawdown: 'Elevated', label: 'Fast execution bias' },
-  aggressive: { risk: 1.7, freq: 'High', drawdown: 'High', label: 'Research only' }
+  safe: { risk: 0.5, threshold: 88, freq: 'Fewer trades', drawdown: 'Lower risk', label: 'Safe: fewer trades, lower risk' },
+  balanced: { risk: 1, threshold: 80, freq: 'Normal', drawdown: 'Controlled', label: 'Balanced: normal' },
+  sniper: { risk: 1.2, threshold: 76, freq: 'Faster entries', drawdown: 'Higher monitoring needed', label: 'Sniper: faster entries' },
+  aggressive: { risk: 1.55, threshold: 70, freq: 'More trades', drawdown: 'Research only', label: 'Aggressive: research only' }
 };
 
 async function refresh() {
@@ -100,15 +111,15 @@ async function refresh() {
 function renderState(state) {
   const stats = state.stats || {};
   const positions = state.openPositions || [];
-  const unrealized = positions.reduce((total, p) => total + Number(p.unrealizedPnlSol || 0), 0);
+  const unrealized = Number(state.unrealizedPnlSol || positions.reduce((total, p) => total + Number(p.unrealizedPnlSol || 0), 0));
   const deployed = positions.reduce((total, p) => total + Number(p.sizeSol || 0) * Number(p.remainingPct || 0), 0);
-  const equity = Number(state.equitySol || 0) + unrealized;
+  const equity = Number(state.equitySol || 0);
   const maxRisk = Number(state.config.risk.maxPositionSizeSol || 0) * Number(state.config.risk.maxOpenTrades || 1);
   if ((state.watchedTokens || []).length && els.networkLabel.textContent === 'SYNCING') {
     setFeed(state.config.dataMode === 'mock' ? 'mock-live' : 'connected');
   }
 
-  els.mode.textContent = `${state.config.mode.toUpperCase()} / ${state.config.dataMode.toUpperCase()}`;
+  els.mode.textContent = state.config.mode === 'paper' ? 'Live Disabled' : 'Live Disabled';
   els.threshold.textContent = `Score ${state.config.strictScoreThreshold}+`;
   els.equity.textContent = fixed(equity);
   els.pnl.textContent = signed(stats.totalPnlSol || 0);
@@ -136,8 +147,11 @@ function renderState(state) {
   }
 
   renderTicker(state.watchedTokens || []);
+  renderOnboarding(state);
+  renderBeginner(state);
   renderSourceStrip(state.sourceHealth || {}, state.config);
   renderIntelligence(state.intelligence || {});
+  renderLearning(state.learning || {});
   renderScanner(state.watchedTokens || []);
   renderPositions(positions);
   renderTokenDetail(selectedToken(state.watchedTokens || []) || bestToken(state.watchedTokens || []));
@@ -145,6 +159,96 @@ function renderState(state) {
   renderAlerts(state.portfolio?.alerts || []);
   renderBlocked(state.watchedTokens || []);
   drawChart(state.portfolio?.equityCurve || [], positions);
+}
+
+function renderBeginner(state) {
+  const tokens = state.watchedTokens || [];
+  const positions = state.openPositions || [];
+  const best = [...tokens].sort((a, b) => beginnerRank(b) - beginnerRank(a))[0];
+  const unrealized = Number(state.unrealizedPnlSol || 0);
+  els.simpleActivePnl.textContent = `${signed(unrealized)} SOL`;
+  els.simpleActivePnl.className = unrealized >= 0 ? 'green' : 'red';
+  const source = state.sourceHealth?.PumpPortal;
+  els.simpleScannerStatus.textContent = source?.message || source?.status || `${tokens.length} tokens tracked`;
+  if (!best) {
+    els.bestCoinSubtitle.textContent = 'No token data yet';
+    els.bestCoinScore.textContent = '--';
+    els.bestCoinCard.className = 'best-coin-card empty-state';
+    els.bestCoinCard.textContent = 'No live tokens yet. Add API keys for stronger real-time data or wait for public sources.';
+    els.simpleEntryReason.textContent = 'No entry yet';
+    els.simpleAvoidReason.textContent = 'Waiting for scanner data';
+    els.simpleRugRisk.textContent = '--';
+    els.simpleMomentum.textContent = '--';
+    return;
+  }
+  selectedMint = selectedMint || best.mint;
+  const score = best.lastScore?.score || 0;
+  els.bestCoinSubtitle.textContent = `${short(best.mint)} / ${best.decisionLabel || best.status}`;
+  els.bestCoinScore.textContent = score;
+  els.bestCoinScore.className = `score-badge ${scoreClass(score, state.config.strictScoreThreshold)}`;
+  els.simpleEntryReason.textContent = entryWhy(best, state.config);
+  els.simpleAvoidReason.textContent = avoidWhy(best);
+  els.simpleRugRisk.textContent = best.rugRiskLevel || 'Unknown';
+  els.simpleRugRisk.className = /High|Extreme/.test(best.rugRiskLevel || '') ? 'red' : best.rugRiskLevel === 'Medium' ? 'yellow' : 'green';
+  els.simpleMomentum.textContent = `${Math.round(best.momentumScore || best.lastScore?.categories?.momentum || 0)}/100`;
+  els.bestCoinCard.className = 'best-coin-card';
+  els.bestCoinCard.innerHTML = `
+    <div class="best-title"><strong>${tokenIcon(best)}${tokenName(best)}</strong><span class="state ${safeClass(best.status)}">${escapeHtml(best.status || 'WATCHING')}</span></div>
+    <canvas class="analysis-chart" width="520" height="170"></canvas>
+    <div class="best-actions">
+      <button class="action-button profit" data-action="paper-buy" data-mint="${escapeAttr(best.mint)}">Paper Buy</button>
+      <button class="action-button" data-action="close" data-mint="${escapeAttr(best.mint)}">Paper Sell</button>
+      <button class="action-button" data-action="analyze" data-mint="${escapeAttr(best.mint)}">View Chart</button>
+      <button class="action-button warn" data-action="block-reason" data-mint="${escapeAttr(best.mint)}">Block Reason</button>
+      <span class="mode-pill">Live Disabled</span>
+    </div>`;
+  drawMiniChart(els.bestCoinCard.querySelector('canvas'), best);
+}
+
+function beginnerRank(token) {
+  const score = token.lastScore?.score || 0;
+  const riskPenalty = Number(token.rugRiskScore || 0) * 0.45;
+  const statusBoost = token.status === 'QUALIFIED' ? 20 : token.status === 'ENTERED' ? 15 : token.status === 'WATCHING' ? 5 : -20;
+  return score + Number(token.momentumScore || 0) * 0.18 - riskPenalty + statusBoost;
+}
+
+function entryWhy(token, config) {
+  const score = token.lastScore?.score || 0;
+  if (score >= config.strictScoreThreshold) return `Score ${score}, ${token.decisionLabel || 'confirmed'}, buyers active.`;
+  if ((token.lastScore?.categories?.momentum || token.momentumScore || 0) >= 70) return 'Momentum forming; scout only if safety improves.';
+  return 'No entry until score, timing, and safety align.';
+}
+
+function avoidWhy(token) {
+  const reasons = token.blockReasons || [token.statusReason].filter(Boolean);
+  if (reasons.length) return reasons.slice(0, 2).join(' | ');
+  if (token.decisionLabel === 'Too late') return 'Move is extended; avoid top-buy risk.';
+  if ((token.rugRiskScore || 0) > 60) return 'Rug risk is too high.';
+  return 'No major avoid reason.';
+}
+
+function renderLearning(learning) {
+  const badBlocks = (learning.blockedMemory || []).filter((item) => item.outcome === 'bad block or missed run').slice(0, 6);
+  els.blockedRanList.innerHTML = badBlocks.map((item) => learningRow(item)).join('') || '<div class="empty-mini">No bad blocks detected yet.</div>';
+  const missed = (learning.missedRuns || []).filter((item) => item.maxRunPct > 0.2 || item.outcome === 'bad block or missed run').slice(0, 6);
+  els.missedRunList.innerHTML = missed.map((item) => learningRow(item)).join('') || '<div class="empty-mini">No missed runs recorded yet.</div>';
+}
+
+function learningRow(item) {
+  return `<div class="learning-row"><strong>${escapeHtml(item.symbol || item.name || short(item.mint))} <span>${signedPct(item.maxRunPct || 0)}</span></strong><small>${escapeHtml((item.reasons || []).slice(0, 2).join(' | ') || item.outcome || 'pending')}</small></div>`;
+}
+
+function renderOnboarding(state) {
+  const steps = [...document.querySelectorAll('.onboard-step')];
+  const hasSource = Object.values(state.sourceHealth || {}).some((source) => ['online', 'connected', 'public-only'].includes(source.status));
+  const hasToken = (state.watchedTokens || []).length > 0;
+  const hasSelection = Boolean(selectedToken(state.watchedTokens || []) || bestToken(state.watchedTokens || []));
+  const hasPosition = (state.openPositions || []).length > 0;
+  [walletConnected, true, hasSource, hasToken && hasSelection, hasPosition].forEach((done, index) => {
+    if (!steps[index]) return;
+    steps[index].classList.toggle('done', Boolean(done));
+    steps[index].classList.toggle('active', !done && !steps.slice(0, index).some((step) => !step.classList.contains('done')));
+  });
 }
 
 function renderIntelligence(intel) {
@@ -202,7 +306,7 @@ function renderTicker(tokens) {
 
 function renderSourceStrip(health, config) {
   const sources = [
-    ['PumpPortal', health.PumpPortal || { status: config.pumpPortalApiKey ? 'connecting' : 'public-new-token' }],
+    ['PumpPortal', health.PumpPortal || { status: config.pumpPortalApiKey ? 'connecting' : 'missing-key', message: 'Missing API key; public launch data only' }],
     ['DexScreener', health.DexScreener || { status: 'connecting' }],
     ['DexPairs', health.DexScreenerPairs || { status: 'connecting' }],
     ['Solana RPC', health.SolanaRPC || { status: 'connecting' }],
@@ -212,10 +316,12 @@ function renderSourceStrip(health, config) {
   ];
   els.sourceStrip.innerHTML = sources.map(([label, src]) => {
     const status = String(src.status || 'offline');
-    const online = status.includes('online') || status.includes('paper') || status.includes('public');
+    const online = status.includes('online') || status.includes('paper') || status.includes('public') || status.includes('connected');
     const degraded = status.includes('degraded') || status.includes('connecting');
+    const missing = status.includes('missing') || status.includes('not-configured');
     const meta = src.slot ? `slot ${src.slot}` : src.latencyMs ? `${src.latencyMs}ms latency` : src.message || status;
-    return `<article class="source-card"><small><span class="source-status ${online ? 'online' : degraded ? 'degraded' : 'offline'}"></span>${label}</small><strong>${escapeHtml(meta)}</strong></article>`;
+    const tone = online ? 'online' : degraded || missing ? 'degraded' : 'offline';
+    return `<article class="source-card"><small><span class="source-status ${tone}"></span>${escapeHtml(label)}</small><strong>${escapeHtml(meta)}</strong></article>`;
   }).join('');
 }
 
@@ -237,25 +343,20 @@ function renderScanner(tokens) {
     const selected = selectedMint === t.mint ? 'selected' : '';
     const fresh = t.ageMs < 9000 ? 'fresh' : '';
     return `<tr class="${selected} ${fresh}" data-mint="${escapeAttr(t.mint)}">
-      <td><span class="state ${t.status}">${t.status}</span></td>
-      <td class="token-cell"><strong>${tokenIcon(t)}${tokenName(t)}</strong><small><span class="contract-line">${short(t.mint)} <button class="copy-chip" data-action="copy-mint" data-mint="${escapeAttr(t.mint)}">COPY</button></span> / ${escapeHtml(t.source || 'market')}</small></td>
-      <td>${age(t.ageMs)}</td>
-      <td>${fixed(t.marketCapSol)}</td>
-      <td>${pct(t.bondingCurveProgress)} <span class="${move}">${score >= threshold ? 'UP' : 'SCAN'}</span></td>
-      <td>${fixed(t.buyVolumeSol + t.sellVolumeSol)}<div class="heat" style="opacity:${Math.min(1, 0.25 + (t.volumeSpike || 0) / 8)}"></div></td>
-      <td>${ratio(t.buySellRatio)}</td>
-      <td>${t.holderCount}<div class="confidence"><span style="width:${clamp(t.holderCount * 7, 6, 100)}%"></span></div></td>
-      <td class="spark-cell"><canvas class="row-spark" width="90" height="28" data-spark="${escapeAttr(t.mint)}"></canvas></td>
-      <td class="${t.rugRiskScore > 65 ? 'red' : t.rugRiskScore > 42 ? 'yellow' : 'green'}">${Math.round(t.rugRiskScore || 0)}</td>
+      <td class="token-cell"><strong>${tokenIcon(t)}${tokenName(t)}</strong><small><span class="contract-line">${short(t.mint)} <button class="copy-chip" data-action="copy-mint" data-mint="${escapeAttr(t.mint)}">Copy</button></span> / ${age(t.ageMs)} / ${escapeHtml(t.source || 'market')}</small></td>
       <td class="${scoreClass(score, threshold)}">${score}</td>
+      <td class="${t.rugRiskScore > 65 ? 'red' : t.rugRiskScore > 42 ? 'yellow' : 'green'}">${Math.round(t.rugRiskScore || 0)}</td>
+      <td>${fixed(t.buyVolumeSol + t.sellVolumeSol)}<div class="heat" style="opacity:${Math.min(1, 0.25 + (t.volumeSpike || 0) / 8)}"></div></td>
+      <td><span class="state ${safeClass(t.status)}">${escapeHtml(t.status || 'WATCHING')}</span></td>
+      <td class="spark-cell"><canvas class="row-spark" width="90" height="28" data-spark="${escapeAttr(t.mint)}"></canvas></td>
       <td><div class="row-actions">
-        <button class="mini-button" data-action="watch" data-mint="${escapeAttr(t.mint)}">WATCH</button>
-        <button class="mini-button" data-action="analyze" data-mint="${escapeAttr(t.mint)}">ANALYZE</button>
-        <button class="mini-button" data-action="paper-buy" data-mint="${escapeAttr(t.mint)}">SIM</button>
-        <button class="mini-button buy-live" data-action="live-buy" data-mint="${escapeAttr(t.mint)}">LIVE</button>
+        <button class="mini-button" data-action="paper-buy" data-mint="${escapeAttr(t.mint)}">Paper Buy</button>
+        <button class="mini-button" data-action="analyze" data-mint="${escapeAttr(t.mint)}">View Chart</button>
+        <button class="mini-button" data-action="block-reason" data-mint="${escapeAttr(t.mint)}">Block Reason</button>
+        <button class="mini-button buy-live" data-action="live-buy" data-mint="${escapeAttr(t.mint)}">Live Disabled</button>
       </div></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="12">No tokens match this filter.</td></tr>';
+  }).join('') || '<tr><td colspan="7"><div class="empty-row">No tokens yet. Connect data sources or wait for the scanner to receive live launches.</div></td></tr>';
   drawRowSparklines(filtered.slice(0, 42));
 }
 
@@ -276,7 +377,7 @@ function renderTokenDetail(token) {
   els.tokenDetail.innerHTML = `
     <div class="detail-header">
       <div><h3>${tokenIcon(token)}${tokenName(token)}</h3><p>${escapeHtml(token.name || token.symbol || token.mint)} / ${escapeHtml(token.source || 'market')}</p></div>
-      <span class="state ${token.status}">${token.status}</span>
+      <span class="state ${safeClass(token.status)}">${escapeHtml(token.status || 'WATCHING')}</span>
     </div>
     <div class="detail-actions">
       <button class="mini-button" data-action="copy-mint" data-mint="${escapeAttr(token.mint)}">Copy Mint</button>
@@ -372,21 +473,47 @@ function renderRiskConsole(config) {
   const profile = presetProfiles[riskPreset];
   const risk = config.risk;
   const display = [
-    ['Max risk / trade', risk.maxRiskPerTradeSol * profile.risk, 0.01, 0.2, 'SOL'],
-    ['Max position', risk.maxPositionSizeSol * profile.risk, 0.03, 0.6, 'SOL'],
-    ['Slippage cap', risk.maxSlippagePct * profile.risk, 0.01, 0.15, '%'],
-    ['Daily loss stop', risk.maxDailyLossSol * profile.risk, 0.05, 1.2, 'SOL']
+    ['Score threshold', config.strictScoreThreshold, profile.threshold, 'points'],
+    ['Max risk / trade', risk.maxRiskPerTradeSol, risk.maxRiskPerTradeSol * profile.risk, 'SOL'],
+    ['Max position', risk.maxPositionSizeSol, risk.maxPositionSizeSol * profile.risk, 'SOL'],
+    ['Slippage cap', risk.maxSlippagePct, Math.min(0.15, risk.maxSlippagePct * profile.risk), '%'],
+    ['Daily loss stop', risk.maxDailyLossSol, risk.maxDailyLossSol * profile.risk, 'SOL']
   ];
-  els.settings.innerHTML = display.map(([label, value, min, max, unit]) => `
+  els.settings.innerHTML = display.map(([label, current, next, unit]) => `
     <div class="risk-setting">
       <label>${label}</label>
-      <strong>${unit === '%' ? pct(value) : fixed(value) + ' ' + unit}</strong>
-      <input type="range" min="${min}" max="${max}" step="0.01" value="${value}">
+      <strong>${formatRiskValue(current, unit)} to ${formatRiskValue(next, unit)}</strong>
     </div>`).join('');
   els.riskImpact.innerHTML = `
     <div><small>Trade Frequency</small><strong>${profile.freq}</strong></div>
     <div><small>Drawdown Bias</small><strong>${profile.drawdown}</strong></div>
     <div><small>Mode</small><strong>${profile.label}</strong></div>`;
+}
+
+function formatRiskValue(value, unit) {
+  if (unit === '%') return pct(value);
+  if (unit === 'points') return Math.round(value);
+  return `${fixed(value)} ${unit}`;
+}
+
+async function applyRiskPreset(name) {
+  const profile = presetProfiles[name];
+  if (!profile || !latestState) return;
+  const risk = latestState.config.risk;
+  const settings = {
+    strictScoreThreshold: profile.threshold,
+    maxRiskPerTradeSol: risk.maxRiskPerTradeSol * profile.risk,
+    maxPositionSizeSol: risk.maxPositionSizeSol * profile.risk,
+    maxSlippagePct: Math.min(0.15, risk.maxSlippagePct * profile.risk),
+    maxDailyLossSol: risk.maxDailyLossSol * profile.risk
+  };
+  const result = await apiPost('/api/risk/settings', settings);
+  if (!result.ok) {
+    toast(result.error || 'Risk preset rejected');
+    return;
+  }
+  toast(`Risk preset applied / ${profile.label}`);
+  await refresh();
 }
 
 function renderAlerts(alerts) {
@@ -698,6 +825,10 @@ function openExecutionModal(token, mode) {
       <strong>${live ? 'Live mode is protected' : 'Paper execution realism'}</strong>
       <div>${live ? 'Frontend can prepare a ticket, but live broadcast remains blocked until a secure backend wallet broker is configured.' : 'Paper mode uses live market data and simulates fill, slippage, fee, latency, partial fill risk, and confirmation without risking SOL.'}</div>
     </div>
+    <div class="modal-actions">
+      <button class="action-button profit" data-action="${live ? 'live-disabled' : 'confirm-paper-buy'}" data-mint="${escapeAttr(token.mint)}">${live ? 'Live Disabled' : 'Confirm Paper Buy'}</button>
+      <button class="action-button" data-action="cancel-execution">Cancel</button>
+    </div>
     <div class="execution-steps">
       <div class="execution-step active" id="execStep1"><small>1 / Wallet</small><strong>${walletConnected ? 'Wallet session verified' : 'Waiting for Phantom/Solflare connection'}</strong></div>
       <div class="execution-step" id="execStep2"><small>2 / Quote</small><strong>Building route and slippage envelope</strong></div>
@@ -706,16 +837,56 @@ function openExecutionModal(token, mode) {
     </div>`;
   els.executionModal.classList.remove('hidden');
   setTimeout(() => markStep('execStep2', 'done'), 450);
-  setTimeout(() => markStep('execStep3', live ? 'active' : 'done'), 980);
+  setTimeout(() => markStep('execStep3', live ? 'active' : 'active'), 980);
   setTimeout(() => {
     const step = q('#execStep4');
-    step.classList.add(live ? 'active' : 'done');
-    step.querySelector('strong').textContent = live ? 'Live broadcast disabled by backend safety gate' : `${signature} / ${latency}ms`;
+    step.classList.add('active');
+    step.querySelector('strong').textContent = live ? 'Live broadcast disabled by backend safety gate' : 'Ready for backend paper execution';
     if (!live) {
-      swapCount += 1;
-      addWalletActivity('Paper swap confirmed', `${tokenName(token)} / ${fixed(sizeSol)} SOL / ${signature.slice(0, 10)}...`);
+      addWalletActivity('Paper ticket prepared', `${tokenName(token)} / ${fixed(sizeSol)} SOL / backend confirmation required`);
     }
   }, 1500);
+}
+
+async function confirmPaperBuy(mint) {
+  const token = selectedToken(latestState?.watchedTokens || []);
+  const sizeSol = latestState.config.risk.maxPositionSizeSol;
+  markStep('execStep3', 'active');
+  const result = await apiPost('/api/paper/buy', { mint, sizeSol });
+  if (!result.ok) {
+    toast(result.error || 'Paper buy blocked');
+    const step = q('#execStep4');
+    if (step) step.querySelector('strong').textContent = result.error || 'Blocked by backend risk engine';
+    return;
+  }
+  swapCount += 1;
+  markStep('execStep3', 'done');
+  markStep('execStep4', 'done');
+  const sig = randomSignature();
+  const step = q('#execStep4');
+  if (step) step.querySelector('strong').textContent = `${sig.slice(0, 18)}... / backend filled`;
+  if (token) addWalletActivity('Paper buy filled', `${tokenName(token)} / ${fixed(sizeSol)} SOL / ${sig.slice(0, 10)}...`);
+  toast('Paper buy filled');
+  await refresh();
+}
+
+async function paperSell(mint, pct = 1, reason = 'manual paper sell') {
+  const result = await apiPost('/api/paper/sell', { mint, pct, reason });
+  if (!result.ok) {
+    toast(result.error || 'Paper sell blocked');
+    return;
+  }
+  toast(pct >= 1 ? 'Paper sell filled' : 'Paper partial sell filled');
+  await refresh();
+}
+
+async function apiPost(url, body) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return response.json();
 }
 
 function markStep(id, state) {
@@ -771,6 +942,7 @@ function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
 }
 function escapeAttr(value = '') { return escapeHtml(value).replace(/`/g, '&#096;'); }
+function safeClass(value = '') { return String(value).replace(/[^a-zA-Z0-9_-]/g, ''); }
 
 els.walletButton.addEventListener('click', () => {
   if (walletConnected) {
@@ -841,11 +1013,18 @@ document.body.addEventListener('click', (event) => {
     const label = token ? tokenName(token) : short(mint);
     if (action === 'copy-mint') copyText(mint, 'Mint copied');
     else if (action === 'copy-dev') copyText(button.dataset.wallet || '', 'Dev wallet copied');
-    else if (action === 'open-pump') openUrl(`https://pump.fun/${mint}`);
-    else if (action === 'open-dex') openUrl(`https://dexscreener.com/solana/${mint}`);
-    else if (action === 'open-solscan') openUrl(`https://solscan.io/token/${mint}`);
+    else if (action === 'open-pump') openUrl(`https://pump.fun/${encodeURIComponent(mint)}`);
+    else if (action === 'open-dex') openUrl(`https://dexscreener.com/solana/${encodeURIComponent(mint)}`);
+    else if (action === 'open-solscan') openUrl(`https://solscan.io/token/${encodeURIComponent(mint)}`);
     else if (action === 'live-buy') openExecutionModal(token, 'live');
     else if (action === 'paper-buy') openExecutionModal(token, 'paper');
+    else if (action === 'confirm-paper-buy') confirmPaperBuy(mint);
+    else if (action === 'cancel-execution') els.executionModal.classList.add('hidden');
+    else if (action === 'live-disabled') toast('Live trading is disabled until a secure backend broker is implemented');
+    else if (action === 'close' || action === 'emergency-exit') paperSell(mint, 1, action === 'emergency-exit' ? 'manual emergency paper exit' : 'manual paper sell');
+    else if (action === 'partial-close') paperSell(mint, 0.5, 'manual paper partial sell');
+    else if (action === 'protect') paperSell(mint, 0.25, 'manual protect profit paper sell');
+    else if (action === 'block-reason') toast((token?.blockReasons || [token?.statusReason || 'No block reason.']).slice(0, 2).join(' | '));
     else toast(`${action.replace('-', ' ')} / ${label}`);
     latestState && renderScanner(latestState.watchedTokens || []);
     return;
@@ -887,7 +1066,7 @@ els.riskPresets.addEventListener('click', (event) => {
   riskPreset = button.dataset.preset;
   [...els.riskPresets.querySelectorAll('button')].forEach((b) => b.classList.toggle('active', b === button));
   latestState && renderRiskConsole(latestState.config);
-  toast(`Risk preset selected / ${presetProfiles[riskPreset].label}`);
+  applyRiskPreset(riskPreset);
 });
 
 document.querySelectorAll('[data-chart]').forEach((button) => {

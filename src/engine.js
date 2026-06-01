@@ -1,5 +1,5 @@
 import { TokenState } from './token-state.js';
-import { blockReasons, scoreToken } from './scoring.js';
+import { blockReasons, rugRiskLevel, scoreToken } from './scoring.js';
 
 export class SniperEngine {
   constructor({ config, events, risk, tradeManager, broker, portfolio }) {
@@ -21,6 +21,9 @@ export class SniperEngine {
       totalPnlSol: 0,
       blockedRugRisk: 0
     };
+    this.blockedMemory = [];
+    this.missedRuns = [];
+    this.reasonPerformance = new Map();
 
     events.on('trade:close', (event) => {
       const token = this.tokens.get(event.mint);
@@ -35,6 +38,12 @@ export class SniperEngine {
       this.risk.observeClosedTrade(event.pnlSol, event.at);
       this.portfolio?.recordTradeClose(event, this.broker.equitySol);
     });
+    events.on('trade:add', (event) => this.portfolio?.alert({
+      at: event.at,
+      level: 'info',
+      title: `${event.position.symbol || event.position.name || event.position.mint} scout confirmed`,
+      detail: `Added ${event.addSizeSol.toFixed(4)} SOL after confirmation`
+    }));
     events.on('token:blocked', (event) => this.portfolio?.alert({
       at: event.at,
       level: event.score.score >= 70 ? 'warning' : 'info',
@@ -60,6 +69,7 @@ export class SniperEngine {
     const snapshot = token.snapshot(at);
     const score = scoreToken(snapshot, this.config);
     token.lastScore = score;
+    this.updateOutcomeMemory(snapshot, at);
     await this.tradeManager.update(snapshot, score, at);
     await this.evaluate(snapshot, score, at);
   }
@@ -73,14 +83,19 @@ export class SniperEngine {
     const snapshot = token.snapshot(at);
     const score = scoreToken(snapshot, this.config);
     token.lastScore = score;
+    this.updateOutcomeMemory(snapshot, at);
     await this.tradeManager.update(snapshot, score, at);
     await this.evaluate(snapshot, score, at);
   }
 
   async evaluate(snapshot, existingScore = null, at = Date.now()) {
-    if (this.tradeManager.positions.has(snapshot.mint)) return;
+    const openPosition = this.tradeManager.positions.get(snapshot.mint);
     const score = existingScore || scoreToken(snapshot, this.config);
     snapshot.raw.lastScore = score;
+    if (openPosition) {
+      await this.maybeConfirmScout(openPosition, snapshot, score, at);
+      return;
+    }
     const reasons = blockReasons(snapshot, score, this.config);
     const riskReasons = this.risk.canOpen({
       openPositions: this.tradeManager.positions.size,
@@ -99,23 +114,175 @@ export class SniperEngine {
       if (hardBlock && allBlocks.some((reason) => /dev|holder|insider|sell|whale|liquidity/i.test(reason))) {
         this.stats.blockedRugRisk += 1;
       }
+      this.recordBlocked(snapshot, score, allBlocks, at);
+      this.recordMissedWatch(snapshot, score, allBlocks, at);
       this.events.emit(hardBlock ? 'token:blocked' : 'token:watching', { at, snapshot, score, reasons: allBlocks });
+      await this.maybeScout(snapshot, score, allBlocks, at);
       return;
     }
 
     snapshot.raw.status = 'QUALIFIED';
     snapshot.raw.statusReason = `score ${score.score} passed strict threshold`;
     this.events.emit('token:qualified', { at, snapshot, score });
-    const sizeSol = this.risk.sizePosition(snapshot);
+    const sizeSol = this.risk.sizePosition(snapshot, score);
     if (sizeSol <= 0) {
       this.events.emit('token:blocked', { at, snapshot, score, reasons: ['position size resolved to zero'] });
       return;
     }
     const entryReasons = explainEntry(snapshot, score);
-    await this.tradeManager.open(snapshot, score, entryReasons, at, sizeSol);
+    await this.tradeManager.open(snapshot, score, entryReasons, at, sizeSol, 'confirmed');
     snapshot.raw.status = 'ENTERED';
     snapshot.raw.statusReason = entryReasons.join(' | ');
     this.stats.bought += 1;
+  }
+
+  async maybeScout(snapshot, score, blocks, at) {
+    const rc = this.config.runCatcher || {};
+    if (!rc.enabled) return;
+    if (this.tradeManager.positions.has(snapshot.mint)) return;
+    if (score.score < rc.scoutScoreThreshold) return;
+    if ((score.categories?.momentum || 0) < rc.minMomentumScore) return;
+    if ((score.categories?.safety || 0) < rc.minSafetyScore) return;
+    if (score.label === 'Too late') return;
+    const hardDangers = blocks.filter((reason) => /dev wallet|top holder|top 5|fake volume|sell pressure|low liquidity|too late|overextended/i.test(reason));
+    if (hardDangers.length) return;
+    const riskReasons = this.risk.canOpen({ openPositions: this.tradeManager.positions.size, equitySol: this.broker.equitySol, at });
+    if (riskReasons.length) return;
+    const sizeSol = this.risk.sizePosition(snapshot, score) * rc.scoutRiskMultiplier;
+    if (sizeSol <= 0) return;
+    await this.tradeManager.open(snapshot, score, [`scout entry: ${score.label}`, `momentum ${Math.round(score.categories.momentum)}`, `safety ${Math.round(score.categories.safety)}`], at, sizeSol, 'scout');
+    snapshot.raw.status = 'ENTERED';
+    snapshot.raw.statusReason = 'run-catcher scout entry';
+    this.stats.bought += 1;
+  }
+
+  async maybeConfirmScout(position, snapshot, score, at) {
+    const rc = this.config.runCatcher || {};
+    if (!rc.enabled || position.entryType !== 'scout' || position.addedAfterScout) return;
+    if (score.score < rc.confirmAddScoreThreshold) return;
+    if ((score.categories?.safety || 0) < Math.max(70, rc.minSafetyScore || 0)) return;
+    if (score.label === 'Too late') return;
+    const fullSize = this.risk.sizePosition(snapshot, score);
+    const addSize = Math.max(0, fullSize * rc.confirmAddRiskMultiplier);
+    await this.tradeManager.addToPosition(position, snapshot, score, ['scout confirmed', `score ${score.score}`, `safety ${Math.round(score.categories.safety)}`], at, addSize);
+  }
+
+  recordBlocked(snapshot, score, reasons, at) {
+    if (!reasons.length) return;
+    const existing = this.blockedMemory.find((item) => item.mint === snapshot.mint);
+    if (existing) return;
+    this.blockedMemory.unshift({
+      mint: snapshot.mint,
+      name: snapshot.name,
+      symbol: snapshot.symbol,
+      at,
+      score: score.score,
+      label: score.label,
+      reasons: reasons.slice(0, 6),
+      price: snapshot.price,
+      marketCapSol: snapshot.marketCapSol,
+      liquiditySol: snapshot.liquiditySol,
+      maxPrice: snapshot.price,
+      maxRunPct: 0,
+      checks: [],
+      outcome: 'pending'
+    });
+    if (this.blockedMemory.length > 300) this.blockedMemory.pop();
+  }
+
+  recordMissedWatch(snapshot, score, reasons, at) {
+    if (this.missedRuns.some((item) => item.mint === snapshot.mint)) return;
+    if (score.score < (this.config.runCatcher?.scoutScoreThreshold || 68) - 8) return;
+    this.missedRuns.unshift({
+      mint: snapshot.mint,
+      name: snapshot.name,
+      symbol: snapshot.symbol,
+      at,
+      watchPrice: snapshot.price,
+      maxPrice: snapshot.price,
+      maxRunPct: 0,
+      score: score.score,
+      label: score.label,
+      reasons: reasons.slice(0, 5),
+      status: 'watching outcome'
+    });
+    if (this.missedRuns.length > 300) this.missedRuns.pop();
+  }
+
+  updateOutcomeMemory(snapshot, at) {
+    const checkWindows = this.config.runCatcher?.outcomeCheckMs || [300000, 600000, 1800000];
+    for (const item of [...this.blockedMemory, ...this.missedRuns]) {
+      if (item.mint !== snapshot.mint) continue;
+      item.maxPrice = Math.max(item.maxPrice || 0, snapshot.price || 0);
+      item.maxRunPct = item.price || item.watchPrice ? (item.maxPrice - (item.price || item.watchPrice)) / (item.price || item.watchPrice) : 0;
+      for (const windowMs of checkWindows) {
+        if (at - item.at >= windowMs && !item.checks?.some((check) => check.windowMs === windowMs)) {
+          item.checks = item.checks || [];
+          item.checks.push({ windowMs, at, maxRunPct: item.maxRunPct, price: snapshot.price });
+        }
+      }
+      const ran = item.maxRunPct >= (this.config.runCatcher?.missedRunPct || 0.6);
+      item.outcome = ran ? 'bad block or missed run' : item.checks?.length >= checkWindows.length ? 'good avoid' : 'pending';
+      if (ran && item.reasons) {
+        for (const reason of item.reasons) {
+          const stat = this.reasonPerformance.get(reason) || { reason, missedRuns: 0, goodBlocks: 0 };
+          stat.missedRuns += 1;
+          this.reasonPerformance.set(reason, stat);
+        }
+      }
+    }
+  }
+
+  async paperBuy(mint, options = {}, at = Date.now()) {
+    if (this.config.mode !== 'paper') throw new Error('paper execution endpoint is only available in paper mode');
+    const token = this.tokens.get(mint);
+    if (!token) throw new Error('token is not being tracked');
+    const snapshot = token.snapshot(at);
+    if (this.tradeManager.positions.has(snapshot.mint)) throw new Error('position already open');
+    const score = token.lastScore || scoreToken(snapshot, this.config);
+    const blocks = [
+      ...blockReasons(snapshot, score, this.config),
+      ...this.risk.canOpen({ openPositions: this.tradeManager.positions.size, equitySol: this.broker.equitySol, at })
+    ];
+    if (blocks.length) throw new Error(`paper buy blocked: ${blocks.join('; ')}`);
+    const requestedSize = Number(options.sizeSol || 0);
+    const sizeSol = requestedSize > 0 ? Math.min(requestedSize, this.risk.sizePosition(snapshot), this.config.risk.maxPositionSizeSol) : this.risk.sizePosition(snapshot);
+    if (sizeSol <= 0) throw new Error('position size resolved to zero');
+    const position = await this.tradeManager.open(snapshot, score, explainEntry(snapshot, score), at, sizeSol);
+    token.status = 'ENTERED';
+    token.statusReason = position.reasons.join(' | ');
+    this.stats.bought += 1;
+    return { ok: true, position, equitySol: this.broker.equitySol, cashSol: this.broker.cashSol, execution: this.broker.lastExecution };
+  }
+
+  async paperSell(mint, options = {}, at = Date.now()) {
+    if (this.config.mode !== 'paper') throw new Error('paper execution endpoint is only available in paper mode');
+    const position = this.tradeManager.positions.get(mint);
+    if (!position) throw new Error('no open paper position for token');
+    const token = this.tokens.get(mint);
+    const snapshot = token?.snapshot(at) || { mint, price: position.currentPrice || position.entryPrice, drawdownFromHighPct: position.maxDrawdownPct || 0 };
+    const pct = Math.max(0, Math.min(1, Number(options.pct ?? 1)));
+    if (pct <= 0 || pct >= position.remainingPct - 0.001) {
+      await this.tradeManager.close(position, snapshot, options.reason || 'manual paper sell', at, token?.lastScore || null);
+    } else {
+      await this.tradeManager.sellPartial(position, snapshot, pct, options.reason || 'manual paper partial sell', at);
+    }
+    return { ok: true, equitySol: this.broker.equitySol, cashSol: this.broker.cashSol, execution: this.broker.lastExecution };
+  }
+
+  updateRiskSettings(settings = {}) {
+    const risk = this.config.risk;
+    const management = this.config.management;
+    assignNumber(risk, settings, 'maxRiskPerTradeSol', 0.001, 5);
+    assignNumber(risk, settings, 'maxPositionSizeSol', 0.001, 50);
+    assignNumber(risk, settings, 'maxSlippagePct', 0.001, 0.5);
+    assignNumber(risk, settings, 'maxDailyLossSol', 0.001, 100);
+    assignNumber(risk, settings, 'maxOpenTrades', 1, 20, true);
+    assignNumber(management, settings, 'hardStopLossPct', 0.01, 0.9);
+    assignNumber(management, settings, 'trailingStartPct', 0.01, 5);
+    assignNumber(management, settings, 'trailingDistancePct', 0.01, 0.9);
+    assignNumber(this.config, settings, 'strictScoreThreshold', 1, 100, true);
+    return { risk: this.config.risk, management: this.config.management, strictScoreThreshold: this.config.strictScoreThreshold };
   }
 
   dashboardState() {
@@ -128,6 +295,8 @@ export class SniperEngine {
       },
       equitySol: this.broker.equitySol,
       cashSol: this.broker.cashSol,
+      openValueSol: this.broker.openValueSol,
+      unrealizedPnlSol: this.broker.unrealizedPnlSol,
       feesSol: this.broker.feesSol,
       config: {
         mode: this.config.mode,
@@ -149,6 +318,11 @@ export class SniperEngine {
         equityCurve: this.portfolio?.equityCurve || [],
         alerts: this.portfolio?.alerts || []
       },
+      learning: {
+        blockedMemory: this.blockedMemory.slice(0, 40),
+        missedRuns: this.missedRuns.slice(0, 40),
+        reasonReview: [...this.reasonPerformance.values()].filter((item) => item.missedRuns >= 2).slice(0, 12)
+      },
       openPositions: [...this.tradeManager.positions.values()].map((position) => {
         const snapshot = this.tokens.get(position.mint)?.snapshot();
         return {
@@ -166,6 +340,13 @@ export class SniperEngine {
       })
     };
   }
+}
+
+function assignNumber(target, source, key, min, max, integer = false) {
+  if (!(key in source)) return;
+  const value = Number(source[key]);
+  if (!Number.isFinite(value)) throw new Error(`${key} must be numeric`);
+  target[key] = integer ? Math.round(Math.max(min, Math.min(max, value))) : Math.max(min, Math.min(max, value));
 }
 
 function buildIntelligence({ tokens, positions, sourceHealth, threshold, risk }) {
@@ -294,6 +475,8 @@ function average(values) {
 
 function publicSnapshot(snapshot) {
   const { raw, ...publicFields } = snapshot;
+  publicFields.rugRiskLevel = rugRiskLevel(snapshot);
+  if (snapshot.lastScore) publicFields.decisionLabel = snapshot.lastScore.label || '';
   return publicFields;
 }
 
@@ -312,7 +495,8 @@ function isHardBlock(reason) {
 
 function explainEntry(snapshot, score) {
   return [
-    `strict score ${score.score}`,
+    `${score.label || 'confirmed'} score ${score.score}`,
+    `timing ${Math.round(score.categories?.timing || 0)} safety ${Math.round(score.categories?.safety || 0)}`,
     `buy/sell ratio ${snapshot.buySellRatio.toFixed(2)}`,
     `unique buyers ${snapshot.uniqueBuyers}`,
     `volume spike ${snapshot.volumeSpike.toFixed(2)}x`,

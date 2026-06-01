@@ -3,6 +3,17 @@
   "dataMode": "hybrid",
   "paperStartingSol": 10,
   "strictScoreThreshold": 80,
+  "runCatcher": {
+    "enabled": true,
+    "scoutScoreThreshold": 68,
+    "minSafetyScore": 62,
+    "minMomentumScore": 70,
+    "scoutRiskMultiplier": 0.28,
+    "confirmAddScoreThreshold": 82,
+    "confirmAddRiskMultiplier": 0.72,
+    "missedRunPct": 0.6,
+    "outcomeCheckMs": [300000, 600000, 1800000]
+  },
   "watch": {
     "minMarketCapSol": 20,
     "maxMarketCapSol": 180,
@@ -45,7 +56,8 @@
     "runnerPct": 0.1,
     "trailingStartPct": 0.28,
     "trailingDistancePct": 0.16,
-    "staleMomentumMs": 30000
+    "staleMomentumMs": 30000,
+    "timeStopMs": 90000
   },
   "mockFeed": {
     "enabled": false,

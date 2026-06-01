@@ -6,16 +6,29 @@ import { readJsonl } from './logger.js';
 export function startDashboard({ config, engine, events }) {
   const clients = new Set();
   const publicDir = path.resolve('public');
-  const server = http.createServer((req, res) => {
-    if (req.url === '/api/state') {
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
+    if (req.method === 'GET' && url.pathname === '/api/state') {
       sendJson(res, engine.dashboardState());
       return;
     }
-    if (req.url === '/api/events') {
+    if (req.method === 'GET' && url.pathname === '/api/events') {
       sendJson(res, readJsonl(config.historyPath, 200));
       return;
     }
-    if (req.url === '/stream') {
+    if (req.method === 'POST' && url.pathname === '/api/paper/buy') {
+      await handleJsonAction(req, res, (body) => engine.paperBuy(String(body.mint || ''), body));
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/paper/sell') {
+      await handleJsonAction(req, res, (body) => engine.paperSell(String(body.mint || ''), body));
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/risk/settings') {
+      await handleJsonAction(req, res, (body) => engine.updateRiskSettings(body));
+      return;
+    }
+    if (req.method === 'GET' && url.pathname === '/stream') {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -25,7 +38,8 @@ export function startDashboard({ config, engine, events }) {
       req.on('close', () => clients.delete(res));
       return;
     }
-    const filePath = req.url === '/' ? path.join(publicDir, 'index.html') : path.join(publicDir, req.url || '');
+    const requested = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
+    const filePath = path.resolve(publicDir, requested);
     if (!filePath.startsWith(publicDir) || !fs.existsSync(filePath)) {
       res.writeHead(404);
       res.end('not found');
@@ -39,7 +53,7 @@ export function startDashboard({ config, engine, events }) {
     const data = `data: ${JSON.stringify(stripInternal(event))}\n\n`;
     for (const client of clients) client.write(data);
   };
-  for (const name of ['token:seen', 'token:watching', 'token:qualified', 'token:blocked', 'trade:open', 'trade:partialExit', 'trade:close', 'feed:status', 'feed:sourceHealth', 'feed:migration', 'feed:error']) {
+  for (const name of ['token:seen', 'token:watching', 'token:qualified', 'token:blocked', 'trade:open', 'trade:add', 'trade:partialExit', 'trade:close', 'feed:status', 'feed:sourceHealth', 'feed:migration', 'feed:error']) {
     events.on(name, push);
   }
 
@@ -51,8 +65,36 @@ function stripInternal(value) {
   return JSON.parse(JSON.stringify(value, (key, entry) => key === 'raw' ? undefined : entry));
 }
 
-function sendJson(res, body) {
-  res.writeHead(200, { 'Content-Type': 'application/json' });
+async function handleJsonAction(req, res, action) {
+  try {
+    const body = await readBody(req);
+    const result = await action(body);
+    sendJson(res, result);
+  } catch (error) {
+    sendJson(res, { ok: false, error: error.message }, 400);
+  }
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (chunk) => {
+      data += chunk;
+      if (data.length > 100_000) reject(new Error('request body too large'));
+    });
+    req.on('end', () => {
+      try {
+        resolve(data ? JSON.parse(data) : {});
+      } catch {
+        reject(new Error('invalid JSON body'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function sendJson(res, body, status = 200) {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
 }
 

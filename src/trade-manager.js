@@ -1,7 +1,7 @@
 import { pctChange } from './math.js';
 
 export class Position {
-  constructor({ mint, name, symbol, entryPrice, sizeSol, score, reasons, openedAt }) {
+  constructor({ mint, name, symbol, entryPrice, sizeSol, score, reasons, openedAt, entryType = 'confirmed' }) {
     this.mint = mint;
     this.name = name;
     this.symbol = symbol;
@@ -24,6 +24,8 @@ export class Position {
     this.maxDrawdownPct = 0;
     this.hitTargets = new Set();
     this.closed = false;
+    this.entryType = entryType;
+    this.addedAfterScout = false;
   }
 }
 
@@ -35,7 +37,7 @@ export class TradeManager {
     this.positions = new Map();
   }
 
-  async open(snapshot, score, reasons, at = Date.now(), sizeSol) {
+  async open(snapshot, score, reasons, at = Date.now(), sizeSol, entryType = 'confirmed') {
     const position = new Position({
       mint: snapshot.mint,
       name: snapshot.name,
@@ -44,11 +46,31 @@ export class TradeManager {
       sizeSol,
       score: score.score,
       reasons,
-      openedAt: at
+      openedAt: at,
+      entryType
     });
-    this.positions.set(position.mint, position);
     const execution = await this.broker.buy(position, { maxSlippagePct: this.config.risk.maxSlippagePct });
+    this.positions.set(position.mint, position);
+    this.broker.markToMarket([...this.positions.values()]);
     this.events.emit('trade:open', { type: 'trade:open', at, position, execution, snapshot });
+    return position;
+  }
+
+  async addToPosition(position, snapshot, score, reasons, at = Date.now(), addSizeSol = 0) {
+    if (!position || position.closed || addSizeSol <= 0) return null;
+    const priorSize = position.sizeSol;
+    const priorValue = priorSize * position.entryPrice;
+    const addValue = addSizeSol * snapshot.price;
+    position.sizeSol += addSizeSol;
+    position.entryPrice = (priorValue + addValue) / Math.max(0.000000001, position.sizeSol);
+    position.currentPrice = snapshot.price;
+    position.highPrice = Math.max(position.highPrice, snapshot.price);
+    position.score = score.score;
+    position.reasons = [...new Set([...position.reasons, ...reasons])].slice(0, 8);
+    position.addedAfterScout = true;
+    const execution = await this.broker.buy(position, { maxSlippagePct: this.config.risk.maxSlippagePct });
+    this.broker.markToMarket([...this.positions.values()]);
+    this.events.emit('trade:add', { type: 'trade:add', at, position, addSizeSol, execution, snapshot, reasons });
     return position;
   }
 
@@ -66,6 +88,7 @@ export class TradeManager {
       position.trailingStopPrice = position.highPrice * (1 - this.config.management.trailingDistancePct);
     }
     position.momentumStatus = snapshot.recentBuySellRatio > 2.5 ? 'strong' : snapshot.recentBuySellRatio > 1 ? 'stable' : 'fading';
+    this.broker.markToMarket([...this.positions.values()]);
 
     const emergencyReason = emergencyExitReason(snapshot, change, this.config);
     if (emergencyReason) {
@@ -84,6 +107,10 @@ export class TradeManager {
     const trailDrawdown = position.highPrice > 0 ? (position.highPrice - snapshot.price) / position.highPrice : 0;
     if (trailStarted && trailDrawdown >= this.config.management.trailingDistancePct) {
       await this.close(position, snapshot, 'trailing stop after profit', at);
+      return;
+    }
+    if (at - position.openedAt > (this.config.management.timeStopMs || 90000) && change < 0.08) {
+      await this.close(position, snapshot, 'time stop; momentum did not follow entry', at);
     }
   }
 
@@ -98,6 +125,7 @@ export class TradeManager {
       maxSlippagePct: this.config.risk.maxSlippagePct,
       exitValueSol: position.sizeSol * pct + pnlSol
     });
+    this.broker.markToMarket([...this.positions.values()]);
     this.events.emit('trade:partialExit', { type: 'trade:partialExit', at, mint: position.mint, pct, pnlSol, reason, execution });
     if (position.remainingPct <= 0.001) await this.close(position, snapshot, 'fully scaled out', at);
   }
@@ -116,6 +144,7 @@ export class TradeManager {
       exitValueSol: position.sizeSol * remaining + pnlSol
     });
     this.positions.delete(position.mint);
+    this.broker.markToMarket([...this.positions.values()]);
     this.events.emit('trade:close', {
       type: 'trade:close',
       at,
