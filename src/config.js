@@ -26,6 +26,12 @@ export function loadConfig() {
   config.historyPath = process.env.HISTORY_PATH || config.historyPath || 'data/history.jsonl';
   config.pumpPortalApiKey = process.env.PUMPPORTAL_API_KEY || '';
   if (process.env.MOCK_FEED_ENABLED) config.mockFeed.enabled = process.env.MOCK_FEED_ENABLED === 'true';
+  config.live = config.live || {};
+  config.live.enabled = process.env.LIVE_TRADING_ENABLED === 'true';
+  config.live.dryRun = process.env.LIVE_DRY_RUN !== 'false';
+  config.live.autoTradeEnabled = process.env.LIVE_AUTO_TRADE_ENABLED === 'true';
+  config.live.tradeApiUrl = process.env.LIVE_TRADE_API_URL || config.live.tradeApiUrl || '';
+  config.live.tradeApiKey = process.env.LIVE_TRADE_API_KEY || config.live.tradeApiKey || '';
   config.sources = config.sources || {};
   config.sources.solanaRpcUrl = process.env.SOLANA_RPC_URL || config.sources.solanaRpcUrl;
   config.sources.heliusApiKey = process.env.HELIUS_API_KEY || config.sources.heliusApiKey || '';

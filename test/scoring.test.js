@@ -161,6 +161,21 @@ test('emergency stop blocks new paper entries', () => {
   assert.equal(risk.killSwitch, false);
 });
 
+test('runtime mode switch changes broker and reports live readiness', () => {
+  const cfg = cloneConfig();
+  cfg.live.enabled = true;
+  cfg.live.dryRun = true;
+  cfg.live.tradeApiUrl = 'https://broker.example/trade';
+  cfg.live.tradeApiKey = 'test-key';
+  const { engine } = testEngine(cfg);
+  const live = engine.setMode('live');
+  assert.equal(live.mode, 'live');
+  assert.equal(live.live.tradeApiConfigured, true);
+  assert.equal(engine.config.mode, 'live');
+  const paper = engine.setMode('paper');
+  assert.equal(paper.mode, 'paper');
+});
+
 function testTradeManager() {
   const cfg = cloneConfig();
   const events = new BotEvents();

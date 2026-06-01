@@ -29,7 +29,11 @@
             <span id="feedStatus" class="health-dot"></span>
             <div><strong id="networkLabel">SYNCING</strong><small id="connectionHealth">stream pending</small></div>
           </div>
-          <span id="mode" class="mode-pill">Live Disabled</span>
+          <div class="mode-switch" id="modeSwitch" role="group" aria-label="Trading mode">
+            <button data-mode-option="paper" class="active">Paper</button>
+            <button data-mode-option="live">Live</button>
+          </div>
+          <span id="mode" class="mode-pill">Paper</span>
           <button id="emergencyButton" class="danger-button">Emergency Stop</button>
         </section>
       </header>

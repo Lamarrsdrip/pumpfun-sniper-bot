@@ -59,11 +59,102 @@ function marketValue(position) {
 }
 
 export class DisabledLiveBroker {
+  constructor(config = {}) {
+    this.config = config;
+    this.cashSol = 0;
+    this.equitySol = 0;
+    this.openValueSol = 0;
+    this.unrealizedPnlSol = 0;
+    this.feesSol = 0;
+    this.lastExecution = null;
+    this.executionSeq = 0;
+  }
+
   async buy() {
-    throw new Error('live trading is disabled. Implement a broker only after paper/backtest validation.');
+    throw new Error('live trading is disabled. Configure LIVE_TRADING_ENABLED=true and a live broker provider first.');
   }
 
   async sell() {
-    throw new Error('live trading is disabled. Implement a broker only after paper/backtest validation.');
+    throw new Error('live trading is disabled. Configure LIVE_TRADING_ENABLED=true and a live broker provider first.');
+  }
+
+  markToMarket() {
+    return this.equitySol;
+  }
+}
+
+export class LiveBroker {
+  constructor(config = {}) {
+    this.config = config;
+    this.cashSol = 0;
+    this.equitySol = 0;
+    this.openValueSol = 0;
+    this.unrealizedPnlSol = 0;
+    this.feesSol = 0;
+    this.lastExecution = null;
+    this.executionSeq = 0;
+  }
+
+  async buy(position, context = {}) {
+    return this.execute('buy', position, 1, context);
+  }
+
+  async sell(position, pct, context = {}) {
+    return this.execute('sell', position, pct, context);
+  }
+
+  async execute(side, position, pct, context = {}) {
+    const live = this.config.live || {};
+    if (!live.enabled) throw new Error('live trading is not enabled. Set LIVE_TRADING_ENABLED=true.');
+    const payload = {
+      side,
+      mint: position.mint,
+      symbol: position.symbol,
+      name: position.name,
+      sizeSol: Number(position.sizeSol || 0) * Number(pct || 1),
+      pct,
+      maxSlippagePct: context.maxSlippagePct ?? this.config.risk?.maxSlippagePct,
+      reason: context.reason || '',
+      dryRun: live.dryRun,
+      requestedAt: new Date().toISOString()
+    };
+    if (live.dryRun) {
+      this.lastExecution = this.execution(`live-dry-run-${side}`, payload);
+      return this.lastExecution;
+    }
+    if (!live.tradeApiUrl) throw new Error('live trade API URL is missing. Set LIVE_TRADE_API_URL.');
+    if (!live.tradeApiKey) throw new Error('live trade API key is missing. Set LIVE_TRADE_API_KEY.');
+    const response = await fetch(live.tradeApiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${live.tradeApiKey}`
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(12_000)
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || body.message || `live broker ${response.status}`);
+    this.lastExecution = this.execution(`live-${side}`, {
+      ...payload,
+      provider: body.provider || 'external-live-broker',
+      txSignature: body.txSignature || body.signature || '',
+      response: body
+    });
+    return this.lastExecution;
+  }
+
+  execution(side, data) {
+    this.executionSeq += 1;
+    return {
+      id: `live-${String(this.executionSeq).padStart(6, '0')}`,
+      side,
+      at: Date.now(),
+      ...data
+    };
+  }
+
+  markToMarket() {
+    return this.equitySol;
   }
 }

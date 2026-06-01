@@ -1,5 +1,6 @@
 import { TokenState } from './token-state.js';
 import { blockReasons, rugRiskLevel, scoreToken } from './scoring.js';
+import { DisabledLiveBroker, LiveBroker, PaperBroker } from './broker.js';
 
 export class SniperEngine {
   constructor({ config, events, risk, tradeManager, broker, portfolio }) {
@@ -124,6 +125,10 @@ export class SniperEngine {
     snapshot.raw.status = 'QUALIFIED';
     snapshot.raw.statusReason = `score ${score.score} passed strict threshold`;
     this.events.emit('token:qualified', { at, snapshot, score });
+    if (this.config.mode === 'live' && !this.config.live?.autoTradeEnabled) {
+      snapshot.raw.statusReason = 'qualified for review; live auto-trading is disabled';
+      return;
+    }
     const sizeSol = this.risk.sizePosition(snapshot, score);
     if (sizeSol <= 0) {
       this.events.emit('token:blocked', { at, snapshot, score, reasons: ['position size resolved to zero'] });
@@ -270,6 +275,45 @@ export class SniperEngine {
     return { ok: true, equitySol: this.broker.equitySol, cashSol: this.broker.cashSol, execution: this.broker.lastExecution };
   }
 
+  async liveBuy(mint, options = {}, at = Date.now()) {
+    if (this.config.mode !== 'live') throw new Error('set MODE=live before using live endpoints');
+    if (!this.config.live?.enabled) throw new Error('set LIVE_TRADING_ENABLED=true before using live endpoints');
+    const token = this.tokens.get(mint);
+    if (!token) throw new Error('token is not being tracked');
+    const snapshot = token.snapshot(at);
+    if (this.tradeManager.positions.has(snapshot.mint)) throw new Error('position already open');
+    const score = token.lastScore || scoreToken(snapshot, this.config);
+    const blocks = [
+      ...blockReasons(snapshot, score, this.config),
+      ...this.risk.canOpen({ openPositions: this.tradeManager.positions.size, equitySol: this.broker.equitySol || this.config.paperStartingSol, at })
+    ];
+    if (blocks.length) throw new Error(`live buy blocked: ${blocks.join('; ')}`);
+    const requestedSize = Number(options.sizeSol || 0);
+    const sizeSol = requestedSize > 0 ? Math.min(requestedSize, this.risk.sizePosition(snapshot, score), this.config.risk.maxPositionSizeSol) : this.risk.sizePosition(snapshot, score);
+    if (sizeSol <= 0) throw new Error('position size resolved to zero');
+    const position = await this.tradeManager.open(snapshot, score, explainEntry(snapshot, score), at, sizeSol, this.config.live?.dryRun ? 'live-dry-run' : 'live');
+    token.status = 'ENTERED';
+    token.statusReason = position.reasons.join(' | ');
+    this.stats.bought += 1;
+    return { ok: true, dryRun: Boolean(this.config.live?.dryRun), position, execution: this.broker.lastExecution };
+  }
+
+  async liveSell(mint, options = {}, at = Date.now()) {
+    if (this.config.mode !== 'live') throw new Error('set MODE=live before using live endpoints');
+    if (!this.config.live?.enabled) throw new Error('set LIVE_TRADING_ENABLED=true before using live endpoints');
+    const position = this.tradeManager.positions.get(mint);
+    if (!position) throw new Error('no open live position for token');
+    const token = this.tokens.get(mint);
+    const snapshot = token?.snapshot(at) || { mint, price: position.currentPrice || position.entryPrice, drawdownFromHighPct: position.maxDrawdownPct || 0 };
+    const pct = Math.max(0, Math.min(1, Number(options.pct ?? 1)));
+    if (pct <= 0 || pct >= position.remainingPct - 0.001) {
+      await this.tradeManager.close(position, snapshot, options.reason || 'manual live sell', at, token?.lastScore || null);
+    } else {
+      await this.tradeManager.sellPartial(position, snapshot, pct, options.reason || 'manual live partial sell', at);
+    }
+    return { ok: true, dryRun: Boolean(this.config.live?.dryRun), execution: this.broker.lastExecution };
+  }
+
   updateRiskSettings(settings = {}) {
     const risk = this.config.risk;
     const management = this.config.management;
@@ -294,6 +338,32 @@ export class SniperEngine {
       message: enabled ? 'Emergency stop enabled; new paper entries blocked' : 'Emergency stop cleared'
     });
     return { ok: true, emergencyStop: enabled };
+  }
+
+  setMode(mode) {
+    if (!['paper', 'live'].includes(mode)) throw new Error('mode must be paper or live');
+    if (this.tradeManager.positions.size) throw new Error('close open positions before switching mode');
+    this.config.mode = mode;
+    this.broker = mode === 'live'
+      ? this.config.live?.enabled ? new LiveBroker(this.config) : new DisabledLiveBroker(this.config)
+      : new PaperBroker(this.config.paperStartingSol);
+    this.tradeManager.broker = this.broker;
+    this.events.emit('mode:changed', {
+      type: 'mode:changed',
+      at: Date.now(),
+      mode,
+      liveReady: Boolean(this.config.live?.enabled && this.config.live?.tradeApiUrl && this.config.live?.tradeApiKey),
+      dryRun: Boolean(this.config.live?.dryRun)
+    });
+    return {
+      ok: true,
+      mode,
+      live: {
+        enabled: Boolean(this.config.live?.enabled),
+        dryRun: Boolean(this.config.live?.dryRun),
+        tradeApiConfigured: Boolean(this.config.live?.tradeApiUrl && this.config.live?.tradeApiKey)
+      }
+    };
   }
 
   status() {
@@ -337,8 +407,12 @@ export class SniperEngine {
         feesSol: this.broker.feesSol
       },
       liveTrading: {
-        enabled: false,
-        reason: 'Live trading is intentionally disabled until a secure backend broker is implemented'
+        enabled: Boolean(this.config.live?.enabled),
+        dryRun: Boolean(this.config.live?.dryRun),
+        autoTradeEnabled: Boolean(this.config.live?.autoTradeEnabled),
+        brokerConfigured: Boolean(this.config.live?.tradeApiUrl && this.config.live?.tradeApiKey),
+        ready: Boolean(this.config.mode === 'live' && this.config.live?.enabled && this.config.live?.tradeApiUrl && this.config.live?.tradeApiKey),
+        reason: liveReadinessReason(this.config)
       }
     };
   }
@@ -364,6 +438,12 @@ export class SniperEngine {
         heliusApiKey: Boolean(this.config.sources?.heliusApiKey),
         birdeyeApiKey: Boolean(this.config.sources?.birdeyeApiKey),
         emergencyStop: this.risk.killSwitch,
+        live: {
+          enabled: Boolean(this.config.live?.enabled),
+          dryRun: Boolean(this.config.live?.dryRun),
+          autoTradeEnabled: Boolean(this.config.live?.autoTradeEnabled),
+          tradeApiConfigured: Boolean(this.config.live?.tradeApiUrl && this.config.live?.tradeApiKey)
+        },
         risk: this.config.risk,
         management: this.config.management
       },
@@ -409,6 +489,15 @@ function assignNumber(target, source, key, min, max, integer = false) {
   const value = Number(source[key]);
   if (!Number.isFinite(value)) throw new Error(`${key} must be numeric`);
   target[key] = integer ? Math.round(Math.max(min, Math.min(max, value))) : Math.max(min, Math.min(max, value));
+}
+
+function liveReadinessReason(config) {
+  if (config.mode !== 'live') return 'MODE is not live';
+  if (!config.live?.enabled) return 'LIVE_TRADING_ENABLED is not true';
+  if (!config.live?.tradeApiUrl) return 'LIVE_TRADE_API_URL is missing';
+  if (!config.live?.tradeApiKey) return 'LIVE_TRADE_API_KEY is missing';
+  if (config.live?.dryRun) return 'Live broker configured in dry-run mode';
+  return 'Live broker configured for real broadcast through external provider';
 }
 
 function buildIntelligence({ tokens, positions, sourceHealth, threshold, risk }) {

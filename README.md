@@ -144,13 +144,58 @@ Holder/dev/mint warnings:
 
 ## Live Trading
 
-Live trading is intentionally disabled. `DisabledLiveBroker` throws if selected. A live broker should only be added behind a secure backend-only wallet setup, never in the frontend, and only after:
+Live trading is gated behind explicit backend configuration. The frontend never receives private keys.
+
+Live modes:
+
+```env
+MODE=live
+LIVE_TRADING_ENABLED=true
+LIVE_DRY_RUN=true
+LIVE_AUTO_TRADE_ENABLED=false
+LIVE_TRADE_API_URL=https://your-secure-broker.example/trade
+LIVE_TRADE_API_KEY=your_provider_key
+```
+
+- `LIVE_DRY_RUN=true`: sends dry-run orders to the configured backend broker provider.
+- `LIVE_DRY_RUN=false`: allows the configured backend broker provider to broadcast real transactions.
+- `LIVE_AUTO_TRADE_ENABLED=false`: live entries require manual button confirmation.
+- `LIVE_AUTO_TRADE_ENABLED=true`: scanner-qualified entries can auto-execute through the broker. Use only after audit and small-size forward testing.
+
+The app expects `LIVE_TRADE_API_URL` to accept:
+
+```json
+{
+  "side": "buy",
+  "mint": "token mint",
+  "symbol": "TOKEN",
+  "name": "Token Name",
+  "sizeSol": 0.1,
+  "pct": 1,
+  "maxSlippagePct": 0.08,
+  "reason": "strict score 85",
+  "dryRun": true,
+  "requestedAt": "2026-06-01T00:00:00.000Z"
+}
+```
+
+Expected response:
+
+```json
+{
+  "ok": true,
+  "provider": "your-broker",
+  "txSignature": "optional-solana-signature"
+}
+```
+
+A live broker should only be used behind secure backend-only wallet custody, never in the frontend, and only after:
 
 - Hardware or encrypted key handling is designed.
 - Wallet/private key never touches browser code.
 - Kill switch exists.
 - Max loss, max slippage, max position, and emergency exits are enforced server-side.
-- Paper logs prove the strategy behaves acceptably in bad conditions.
+- Paper and dry-run logs prove the strategy behaves acceptably in bad conditions.
 
 ## Safety Position
 

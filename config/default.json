@@ -3,6 +3,13 @@
   "dataMode": "hybrid",
   "paperStartingSol": 10,
   "strictScoreThreshold": 80,
+  "live": {
+    "enabled": false,
+    "dryRun": true,
+    "autoTradeEnabled": false,
+    "tradeApiUrl": "",
+    "tradeApiKey": ""
+  },
   "runCatcher": {
     "enabled": true,
     "scoutScoreThreshold": 68,

@@ -8,6 +8,7 @@ const els = {
   networkLabel: q('#networkLabel'),
   connectionHealth: q('#connectionHealth'),
   mode: q('#mode'),
+  modeSwitch: q('#modeSwitch'),
   equity: q('#equity'),
   pnl: q('#pnl'),
   activePositions: q('#activePositions'),
@@ -120,7 +121,11 @@ function renderState(state) {
     setFeed(state.config.dataMode === 'mock' ? 'mock-live' : 'connected');
   }
 
-  els.mode.textContent = state.config.mode === 'paper' ? 'Live Disabled' : 'Live Disabled';
+  els.mode.textContent = state.config.mode === 'paper' ? 'Paper' : state.config.live?.dryRun ? 'Live Dry Run' : 'Live Armed';
+  if (state.config.mode === 'live') {
+    els.mode.textContent = state.config.live?.dryRun ? 'Live Dry Run' : 'Live Armed';
+  }
+  renderModeSwitch(state.config);
   els.threshold.textContent = `Score ${state.config.strictScoreThreshold}+`;
   els.equity.textContent = fixed(equity);
   els.pnl.textContent = signed(stats.totalPnlSol || 0);
@@ -203,9 +208,16 @@ function renderBeginner(state) {
       <button class="action-button" data-action="close" data-mint="${escapeAttr(best.mint)}">Paper Sell</button>
       <button class="action-button" data-action="analyze" data-mint="${escapeAttr(best.mint)}">View Chart</button>
       <button class="action-button warn" data-action="block-reason" data-mint="${escapeAttr(best.mint)}">Block Reason</button>
-      <span class="mode-pill">Live Disabled</span>
+      <button class="action-button ${liveButtonClass()}" data-action="live-buy" data-mint="${escapeAttr(best.mint)}">${liveButtonLabel()}</button>
     </div>`;
   drawMiniChart(els.bestCoinCard.querySelector('canvas'), best);
+}
+
+function renderModeSwitch(config) {
+  if (!els.modeSwitch) return;
+  for (const button of els.modeSwitch.querySelectorAll('button[data-mode-option]')) {
+    button.classList.toggle('active', button.dataset.modeOption === config.mode);
+  }
 }
 
 function beginnerRank(token) {
@@ -356,7 +368,7 @@ function renderScanner(tokens) {
         <button class="mini-button" data-action="paper-buy" data-mint="${escapeAttr(t.mint)}">Paper Buy</button>
         <button class="mini-button" data-action="analyze" data-mint="${escapeAttr(t.mint)}">View Chart</button>
         <button class="mini-button" data-action="block-reason" data-mint="${escapeAttr(t.mint)}">Block Reason</button>
-        <button class="mini-button buy-live" data-action="live-buy" data-mint="${escapeAttr(t.mint)}">Live Disabled</button>
+        <button class="mini-button ${liveButtonClass()}" data-action="live-buy" data-mint="${escapeAttr(t.mint)}">${liveButtonLabel()}</button>
       </div></td>
     </tr>`;
   }).join('') || '<tr><td colspan="7"><div class="empty-row">No tokens yet. Connect data sources or wait for the scanner to receive live launches.</div></td></tr>';
@@ -563,6 +575,7 @@ function eventHtml(event) {
   if (event.type === 'trade:partialExit') return eventCard('PROFIT', 'Profit secured', `${short(event.mint)} / ${pct(event.pct)} sold`, `${event.reason} / PnL ${fixed(event.pnlSol)} SOL`, time);
   if (event.type === 'trade:close') return eventCard(event.pnlSol >= 0 ? 'PROFIT' : 'WARNING', 'Position exited', `${short(event.mint)} / PnL ${fixed(event.pnlSol)} SOL`, `${event.reason} / entry ${event.entryScore} / exit ${event.exitScore ?? '--'}`, time);
   if (event.type === 'risk:emergencyStop') return eventCard(event.enabled ? 'CRITICAL' : 'INFO', 'Emergency stop', event.enabled ? 'New entries blocked' : 'New entries allowed', event.message, time);
+  if (event.type === 'mode:changed') return eventCard('INFO', 'Mode changed', `${event.mode}${event.dryRun ? ' / dry run' : ''}`, event.liveReady ? 'Live broker ready' : 'Live broker not fully configured', time);
   if (event.type === 'feed:error') return eventCard('CRITICAL', 'Feed error', 'Data stream interruption', event.message, time);
   return '';
 }
@@ -806,8 +819,9 @@ function openExecutionModal(token, mode) {
   const sizeSol = latestState.config.risk.maxPositionSizeSol;
   const slippage = latestState.config.risk.maxSlippagePct;
   const expectedTokens = token.price ? sizeSol / token.price : 0;
+  const liveReady = isLiveReady();
   els.executionTitle.textContent = live ? 'Live Execution Ticket' : 'Paper Execution Ticket';
-  els.executionSubtitle.textContent = `${tokenName(token)} / ${short(token.mint)} / ${live ? 'wallet confirmation required' : 'realistic paper fill simulator'}`;
+  els.executionSubtitle.textContent = `${tokenName(token)} / ${short(token.mint)} / ${live ? liveStatusText() : 'backend paper fill simulator'}`;
   els.executionBody.innerHTML = `
     <div class="risk-setting">
       <label>SOL amount</label><strong>${fixed(sizeSol)} SOL</strong>
@@ -826,17 +840,17 @@ function openExecutionModal(token, mode) {
       <div><small>Risk</small><strong class="${token.rugRiskScore > 55 ? 'yellow' : 'green'}">${Math.round(token.rugRiskScore || 0)} / 100</strong></div>
     </div>
     <div class="reason-box">
-      <strong>${live ? 'Live mode is protected' : 'Paper execution realism'}</strong>
-      <div>${live ? 'Frontend can prepare a ticket, but live broadcast remains blocked until a secure backend wallet broker is configured.' : 'Paper mode submits to the backend paper broker. The fill is recorded with a backend paper execution ID, not a fake blockchain transaction.'}</div>
+      <strong>${live ? 'Live broker status' : 'Paper execution realism'}</strong>
+      <div>${live ? liveStatusText() : 'Paper mode submits to the backend paper broker. The fill is recorded with a backend paper execution ID, not a fake blockchain transaction.'}</div>
     </div>
     <div class="modal-actions">
-      <button class="action-button profit" data-action="${live ? 'live-disabled' : 'confirm-paper-buy'}" data-mint="${escapeAttr(token.mint)}">${live ? 'Live Disabled' : 'Confirm Paper Buy'}</button>
+      <button class="action-button profit" data-action="${live ? 'confirm-live-buy' : 'confirm-paper-buy'}" data-mint="${escapeAttr(token.mint)}">${live ? liveReady ? 'Confirm Live Buy' : 'Live Not Ready' : 'Confirm Paper Buy'}</button>
       <button class="action-button" data-action="cancel-execution">Cancel</button>
     </div>
     <div class="execution-steps">
       <div class="execution-step active" id="execStep1"><small>1 / Wallet</small><strong>${walletConnected ? 'Wallet session verified' : 'Waiting for Phantom/Solflare connection'}</strong></div>
       <div class="execution-step" id="execStep2"><small>2 / Quote</small><strong>Building route and slippage envelope</strong></div>
-      <div class="execution-step" id="execStep3"><small>3 / Backend</small><strong>${live ? 'Blocked until secure live broker exists' : 'Waiting for backend paper confirmation'}</strong></div>
+      <div class="execution-step" id="execStep3"><small>3 / Backend</small><strong>${live ? liveStatusText() : 'Waiting for backend paper confirmation'}</strong></div>
       <div class="execution-step" id="execStep4"><small>4 / Confirmation</small><strong class="signature">--</strong></div>
     </div>`;
   els.executionModal.classList.remove('hidden');
@@ -845,11 +859,36 @@ function openExecutionModal(token, mode) {
   setTimeout(() => {
     const step = q('#execStep4');
     step.classList.add('active');
-    step.querySelector('strong').textContent = live ? 'Live broadcast disabled by backend safety gate' : 'Ready for backend paper execution';
+    step.querySelector('strong').textContent = live ? liveReady ? 'Ready for backend live broker' : liveStatusText() : 'Ready for backend paper execution';
     if (!live) {
       addWalletActivity('Paper ticket prepared', `${tokenName(token)} / ${fixed(sizeSol)} SOL / backend confirmation required`);
     }
   }, 1500);
+}
+
+function isLiveReady() {
+  const live = latestState?.config?.live || {};
+  return latestState?.config?.mode === 'live' && live.enabled && live.tradeApiConfigured;
+}
+
+function liveButtonLabel() {
+  const live = latestState?.config?.live || {};
+  if (latestState?.config?.mode !== 'live') return 'Live Off';
+  if (!live.enabled || !live.tradeApiConfigured) return 'Live Setup';
+  return live.dryRun ? 'Live Dry Run' : 'Live Buy';
+}
+
+function liveButtonClass() {
+  return isLiveReady() ? 'buy-live ready' : 'buy-live';
+}
+
+function liveStatusText() {
+  const live = latestState?.config?.live || {};
+  if (latestState?.config?.mode !== 'live') return 'Set MODE=live to use live broker.';
+  if (!live.enabled) return 'Set LIVE_TRADING_ENABLED=true to arm live broker.';
+  if (!live.tradeApiConfigured) return 'Add LIVE_TRADE_API_URL and LIVE_TRADE_API_KEY.';
+  if (live.dryRun) return 'Live dry-run is enabled. Provider receives dry-run orders only.';
+  return 'Live broker configured. Real broadcast depends on your provider.';
 }
 
 async function confirmPaperBuy(mint) {
@@ -874,6 +913,34 @@ async function confirmPaperBuy(mint) {
   await refresh();
 }
 
+async function confirmLiveBuy(mint) {
+  if (!isLiveReady()) {
+    toast(liveStatusText());
+    const step = q('#execStep4');
+    if (step) step.querySelector('strong').textContent = liveStatusText();
+    return;
+  }
+  const token = selectedToken(latestState?.watchedTokens || []);
+  const sizeSol = latestState.config.risk.maxPositionSizeSol;
+  markStep('execStep3', 'active');
+  const result = await apiPost('/api/live/buy', { mint, sizeSol });
+  if (!result.ok) {
+    toast(result.error || 'Live buy blocked');
+    const step = q('#execStep4');
+    if (step) step.querySelector('strong').textContent = result.error || 'Blocked by backend live broker';
+    return;
+  }
+  swapCount += 1;
+  markStep('execStep3', 'done');
+  markStep('execStep4', 'done');
+  const executionId = result.execution?.txSignature || result.execution?.id || 'live-fill';
+  const step = q('#execStep4');
+  if (step) step.querySelector('strong').textContent = `${executionId} / ${result.dryRun ? 'dry run' : 'sent'}`;
+  if (token) addWalletActivity(result.dryRun ? 'Live dry-run buy' : 'Live buy sent', `${tokenName(token)} / ${fixed(sizeSol)} SOL / ${executionId}`);
+  toast(result.dryRun ? 'Live dry-run completed' : 'Live buy sent');
+  await refresh();
+}
+
 async function paperSell(mint, pct = 1, reason = 'manual paper sell') {
   const result = await apiPost('/api/paper/sell', { mint, pct, reason });
   if (!result.ok) {
@@ -881,6 +948,20 @@ async function paperSell(mint, pct = 1, reason = 'manual paper sell') {
     return;
   }
   toast(pct >= 1 ? 'Paper sell filled' : 'Paper partial sell filled');
+  await refresh();
+}
+
+async function liveSell(mint, pct = 1, reason = 'manual live sell') {
+  if (!isLiveReady()) {
+    toast(liveStatusText());
+    return;
+  }
+  const result = await apiPost('/api/live/sell', { mint, pct, reason });
+  if (!result.ok) {
+    toast(result.error || 'Live sell blocked');
+    return;
+  }
+  toast(result.dryRun ? 'Live dry-run sell completed' : 'Live sell sent');
   await refresh();
 }
 
@@ -1034,11 +1115,12 @@ document.body.addEventListener('click', (event) => {
     else if (action === 'live-buy') openExecutionModal(token, 'live');
     else if (action === 'paper-buy') openExecutionModal(token, 'paper');
     else if (action === 'confirm-paper-buy') confirmPaperBuy(mint);
+    else if (action === 'confirm-live-buy') confirmLiveBuy(mint);
     else if (action === 'cancel-execution') els.executionModal.classList.add('hidden');
     else if (action === 'live-disabled') toast('Live trading is disabled until a secure backend broker is implemented');
-    else if (action === 'close' || action === 'emergency-exit') paperSell(mint, 1, action === 'emergency-exit' ? 'manual emergency paper exit' : 'manual paper sell');
-    else if (action === 'partial-close') paperSell(mint, 0.5, 'manual paper partial sell');
-    else if (action === 'protect') paperSell(mint, 0.25, 'manual protect profit paper sell');
+    else if (action === 'close' || action === 'emergency-exit') latestState?.config?.mode === 'live' ? liveSell(mint, 1, action === 'emergency-exit' ? 'manual emergency live exit' : 'manual live sell') : paperSell(mint, 1, action === 'emergency-exit' ? 'manual emergency paper exit' : 'manual paper sell');
+    else if (action === 'partial-close') latestState?.config?.mode === 'live' ? liveSell(mint, 0.5, 'manual live partial sell') : paperSell(mint, 0.5, 'manual paper partial sell');
+    else if (action === 'protect') latestState?.config?.mode === 'live' ? liveSell(mint, 0.25, 'manual protect profit live sell') : paperSell(mint, 0.25, 'manual protect profit paper sell');
     else if (action === 'block-reason') toast((token?.blockReasons || [token?.statusReason || 'No block reason.']).slice(0, 2).join(' | '));
     else toast(`${action.replace('-', ' ')} / ${label}`);
     latestState && renderScanner(latestState.watchedTokens || []);
@@ -1082,6 +1164,16 @@ els.riskPresets.addEventListener('click', (event) => {
   [...els.riskPresets.querySelectorAll('button')].forEach((b) => b.classList.toggle('active', b === button));
   latestState && renderRiskConsole(latestState.config);
   applyRiskPreset(riskPreset);
+});
+
+els.modeSwitch.addEventListener('click', async (event) => {
+  const button = event.target.closest('button[data-mode-option]');
+  if (!button) return;
+  const mode = button.dataset.modeOption;
+  const result = await apiPost('/api/mode', { mode });
+  if (!result.ok) return toast(result.error || 'Mode switch failed');
+  toast(mode === 'live' ? liveStatusText() : 'Paper mode active');
+  await refresh();
 });
 
 document.querySelectorAll('[data-chart]').forEach((button) => {
