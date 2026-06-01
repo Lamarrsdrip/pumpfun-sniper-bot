@@ -155,3 +155,57 @@ Live trading is intentionally disabled. `DisabledLiveBroker` throws if selected.
 ## Safety Position
 
 This bot avoids manipulation features entirely: no spam buying, fake volume, wash trading, artificial bundling, or market manipulation. It is designed to skip dangerous tokens and miss trades rather than gamble.
+
+## Hosting
+
+This is a Node.js backend app that serves the frontend, API routes, SSE stream, scanner service, and paper broker. Do not host it as a static-only site unless you separate the frontend from the backend first.
+
+### Recommended: Render Web Service
+
+1. Push the repo to GitHub.
+2. In Render, create a new **Web Service** from the GitHub repo.
+3. Use:
+
+```text
+Runtime: Node
+Build Command: npm install
+Start Command: npm start
+Node version: 22+
+```
+
+4. Set environment variables:
+
+```env
+MODE=paper
+DATA_MODE=hybrid
+PORT=8787
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
+PUMPPORTAL_API_KEY=optional_key_here
+HELIUS_API_KEY=optional_key_here
+BIRDEYE_API_KEY=optional_key_here
+MOCK_FEED_ENABLED=false
+```
+
+5. After deploy, check:
+
+```text
+https://your-render-app.onrender.com/health
+```
+
+### Railway
+
+1. Create a Railway project from GitHub.
+2. Set the same environment variables above.
+3. Use `npm start` as the start command.
+4. Make sure Railway exposes the `PORT` environment variable. If Railway provides its own `PORT`, use that instead of hardcoding `8787`.
+
+### VPS
+
+```bash
+git clone https://github.com/Lamarrsdrip/pumpfun-sniper-bot.git
+cd pumpfun-sniper-bot
+npm install
+MODE=paper DATA_MODE=hybrid PORT=8787 npm start
+```
+
+For production VPS use, run behind a process manager and HTTPS reverse proxy. Keep private keys out of the app because live trading is disabled and no secure live broker exists yet.

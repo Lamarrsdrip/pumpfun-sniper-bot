@@ -174,6 +174,10 @@ p, small, label { color: var(--muted); }
   font-weight: 900;
   text-transform: uppercase;
 }
+.danger-button.armed {
+  background: linear-gradient(180deg, #f0b429, #8a5a00);
+  border-color: rgba(255, 204, 74, 0.65);
+}
 
 .ticker-tape {
   display: flex;
@@ -1212,4 +1216,426 @@ p, small, label { color: var(--muted); }
   .presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .execution-grid, .token-facts { grid-template-columns: 1fr; }
   .wallet-menu { top: 8px; right: 7px; }
+}
+
+/* Phone-first overrides. These intentionally sit last to win over earlier desktop rules. */
+@media (max-width: 820px) {
+  html, body {
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    background: #05070a;
+  }
+
+  .shell {
+    width: 100%;
+    padding: 8px;
+  }
+
+  .command-header,
+  .account-console,
+  .onboarding,
+  .source-strip,
+  .beginner-grid,
+  .main-grid,
+  .positions-grid,
+  .bottom-grid,
+  .bottom-grid.simple-bottom,
+  .money-strip,
+  .intel-grid,
+  .alpha-queue,
+  .learning-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .brand,
+  .account-console,
+  .panel,
+  .money-strip article {
+    border-radius: 8px;
+    box-shadow: none;
+  }
+
+  .brand {
+    min-height: auto;
+    padding: 12px;
+    align-items: flex-start;
+  }
+
+  .logo-mark {
+    width: 42px;
+    height: 42px;
+  }
+
+  h1 {
+    font-size: 20px;
+    line-height: 1.15;
+  }
+
+  h2 {
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  .brand p,
+  .panel-head p {
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .account-console {
+    gap: 7px;
+    padding: 8px;
+  }
+
+  .wallet-card,
+  .header-stat,
+  .health,
+  .mode-pill,
+  .danger-button {
+    min-height: 46px;
+    width: 100%;
+  }
+
+  .wallet-card {
+    justify-content: flex-start;
+  }
+
+  .header-stat,
+  .health {
+    padding: 10px;
+  }
+
+  .header-stat strong {
+    font-size: 17px;
+  }
+
+  .mode-pill,
+  .danger-button {
+    min-height: 42px;
+    text-transform: none;
+  }
+
+  .onboarding {
+    gap: 7px;
+  }
+
+  .onboard-step {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    column-gap: 10px;
+    align-items: start;
+    padding: 10px;
+  }
+
+  .onboard-step small {
+    grid-row: 1 / span 2;
+    width: 24px;
+    height: 24px;
+  }
+
+  .onboard-step strong {
+    margin-top: 0;
+  }
+
+  .onboard-step span {
+    margin-top: 2px;
+  }
+
+  .source-strip {
+    gap: 7px;
+  }
+
+  .source-card {
+    display: grid;
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    gap: 8px;
+    align-items: center;
+  }
+
+  .source-card strong {
+    margin-top: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: right;
+    font-size: 12px;
+  }
+
+  .beginner-grid,
+  .positions-grid,
+  .bottom-grid {
+    gap: 8px;
+  }
+
+  .panel,
+  .best-coin-card,
+  .position-card {
+    padding: 10px;
+  }
+
+  .panel-head {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .score-badge {
+    min-width: 52px;
+    padding: 7px 8px;
+    font-size: 18px;
+  }
+
+  .simple-status {
+    gap: 7px;
+  }
+
+  .simple-status > div {
+    padding: 9px;
+  }
+
+  .best-title,
+  .position-top,
+  .detail-header {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .best-title .state,
+  .detail-header .state {
+    width: max-content;
+  }
+
+  .best-actions,
+  .position-actions,
+  .detail-actions,
+  .row-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+  }
+
+  .action-button,
+  .mini-button,
+  .copy-chip,
+  .scanner-tools input,
+  .scanner-tools select,
+  .segmented button {
+    min-height: 40px;
+    font-size: 12px;
+  }
+
+  .scanner-tools {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+
+  .scanner-panel {
+    overflow: visible;
+  }
+
+  .scanner-table,
+  .scanner-table thead,
+  .scanner-table tbody,
+  .scanner-table tr,
+  .scanner-table th,
+  .scanner-table td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .scanner-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+  }
+
+  .scanner-table thead {
+    display: none;
+  }
+
+  .scanner-table tbody {
+    display: grid;
+    gap: 8px;
+  }
+
+  .scanner-table tbody tr {
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: rgba(255,255,255,0.026);
+    padding: 9px;
+  }
+
+  .scanner-table tbody tr:hover,
+  .scanner-table tbody tr.selected {
+    box-shadow: inset 3px 0 0 rgba(39,231,162,0.75);
+  }
+
+  .scanner-table td {
+    display: grid;
+    grid-template-columns: 86px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    white-space: normal;
+    border-bottom: 1px solid rgba(32, 50, 60, 0.45);
+    padding: 8px 0;
+    overflow-wrap: anywhere;
+  }
+
+  .scanner-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .scanner-table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .scanner-table .token-cell {
+    grid-template-columns: 1fr;
+  }
+
+  .scanner-table .token-cell::before {
+    display: none;
+  }
+
+  .token-cell strong,
+  .position-title strong {
+    font-size: 15px;
+    overflow-wrap: anywhere;
+  }
+
+  .token-cell small,
+  .position-title small,
+  .contract-line {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .spark-cell canvas,
+  .row-spark {
+    width: 100%;
+    max-width: 220px;
+    height: 36px;
+  }
+
+  .analysis-panel {
+    min-height: 0;
+  }
+
+  .empty-state {
+    min-height: 150px;
+    padding: 18px;
+    text-align: center;
+  }
+
+  .analysis-chart,
+  .performance-panel canvas {
+    height: 190px;
+  }
+
+  .zones,
+  .breakdown,
+  .position-metrics,
+  .risk-impact,
+  .token-facts,
+  .execution-grid,
+  .wallet-menu-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .position-top {
+    gap: 6px;
+  }
+
+  .pnl-badge {
+    text-align: left;
+    font-size: 17px;
+  }
+
+  .performance-meta {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .presets {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .risk-setting {
+    grid-template-columns: 1fr;
+  }
+
+  .wallet-menu {
+    top: 8px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100vh - 16px);
+    overflow: auto;
+  }
+
+  .wallet-menu-head {
+    grid-template-columns: 1fr;
+  }
+
+  .wallet-menu-head button {
+    width: 100%;
+    min-height: 38px;
+  }
+
+  .modal-backdrop {
+    align-items: start;
+    padding: 8px;
+    overflow: auto;
+  }
+
+  .execution-modal {
+    width: 100%;
+    max-height: none;
+    padding: 10px;
+    border-radius: 10px;
+  }
+
+  .toast-stack {
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+  }
+
+  .toast {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .shell {
+    padding: 6px;
+  }
+
+  .best-actions,
+  .position-actions,
+  .detail-actions,
+  .row-actions,
+  .presets {
+    grid-template-columns: 1fr;
+  }
+
+  .source-card {
+    grid-template-columns: 1fr;
+  }
+
+  .source-card strong {
+    text-align: left;
+  }
+
+  .scanner-table td {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
 }

@@ -6,6 +6,7 @@ export class PaperBroker {
     this.unrealizedPnlSol = 0;
     this.feesSol = 0;
     this.lastExecution = null;
+    this.executionSeq = 0;
   }
 
   async buy(position, { maxSlippagePct }) {
@@ -15,7 +16,7 @@ export class PaperBroker {
     if (cost > this.cashSol) throw new Error('paper broker has insufficient SOL');
     this.cashSol -= cost;
     this.feesSol += fee + slippage;
-    this.lastExecution = { side: 'buy', feeSol: fee, slippageSol: slippage, grossSol: position.sizeSol, netSol: cost };
+    this.lastExecution = this.execution('buy', { feeSol: fee, slippageSol: slippage, grossSol: position.sizeSol, netSol: cost });
     this.markToMarket([position]);
     return this.lastExecution;
   }
@@ -26,8 +27,18 @@ export class PaperBroker {
     const fee = proceeds * 0.005;
     this.cashSol += Math.max(0, proceeds - fee);
     this.feesSol += fee;
-    this.lastExecution = { side: 'sell', feeSol: fee, slippageSol: 0, grossSol: proceeds, netSol: Math.max(0, proceeds - fee) };
+    this.lastExecution = this.execution('sell', { feeSol: fee, slippageSol: 0, grossSol: proceeds, netSol: Math.max(0, proceeds - fee) });
     return this.lastExecution;
+  }
+
+  execution(side, data) {
+    this.executionSeq += 1;
+    return {
+      id: `paper-${String(this.executionSeq).padStart(6, '0')}`,
+      side,
+      at: Date.now(),
+      ...data
+    };
   }
 
   markToMarket(positions = []) {

@@ -285,6 +285,17 @@ export class SniperEngine {
     return { risk: this.config.risk, management: this.config.management, strictScoreThreshold: this.config.strictScoreThreshold };
   }
 
+  setEmergencyStop(active = true) {
+    const enabled = this.risk.setKillSwitch(active);
+    this.events.emit('risk:emergencyStop', {
+      type: 'risk:emergencyStop',
+      at: Date.now(),
+      enabled,
+      message: enabled ? 'Emergency stop enabled; new paper entries blocked' : 'Emergency stop cleared'
+    });
+    return { ok: true, emergencyStop: enabled };
+  }
+
   status() {
     const sourceHealth = this.sourceHealth || {};
     return {
@@ -319,6 +330,7 @@ export class SniperEngine {
       },
       broker: {
         paper: this.config.mode === 'paper',
+        emergencyStop: this.risk.killSwitch,
         cashSol: this.broker.cashSol,
         equitySol: this.broker.equitySol,
         openValueSol: this.broker.openValueSol,
@@ -351,6 +363,7 @@ export class SniperEngine {
         pumpPortalApiKey: Boolean(this.config.pumpPortalApiKey),
         heliusApiKey: Boolean(this.config.sources?.heliusApiKey),
         birdeyeApiKey: Boolean(this.config.sources?.birdeyeApiKey),
+        emergencyStop: this.risk.killSwitch,
         risk: this.config.risk,
         management: this.config.management
       },

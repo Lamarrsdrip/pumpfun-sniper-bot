@@ -32,6 +32,10 @@ export function startDashboard({ config, engine, events }) {
       await handleJsonAction(req, res, (body) => engine.updateRiskSettings(body));
       return;
     }
+    if (req.method === 'POST' && url.pathname === '/api/emergency-stop') {
+      await handleJsonAction(req, res, (body) => engine.setEmergencyStop(body.active !== false));
+      return;
+    }
     if (req.method === 'GET' && url.pathname === '/stream') {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -57,7 +61,7 @@ export function startDashboard({ config, engine, events }) {
     const data = `data: ${JSON.stringify(stripInternal(event))}\n\n`;
     for (const client of clients) client.write(data);
   };
-  for (const name of ['token:seen', 'token:watching', 'token:qualified', 'token:blocked', 'trade:open', 'trade:add', 'trade:partialExit', 'trade:close', 'feed:status', 'feed:sourceHealth', 'feed:migration', 'feed:error']) {
+  for (const name of ['token:seen', 'token:watching', 'token:qualified', 'token:blocked', 'trade:open', 'trade:add', 'trade:partialExit', 'trade:close', 'risk:emergencyStop', 'feed:status', 'feed:sourceHealth', 'feed:migration', 'feed:error']) {
     events.on(name, push);
   }
 

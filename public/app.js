@@ -89,6 +89,7 @@ let sortKey = 'score';
 let sortDir = -1;
 let eventTotal = 0;
 let walletConnected = false;
+let walletAddress = '';
 let riskPreset = 'balanced';
 let chartMode = 'realized';
 let swapCount = 0;
@@ -138,13 +139,14 @@ function renderState(state) {
   els.healthScore.textContent = healthScore(state);
 
   if (walletConnected) {
-    const walletSol = 12.486 + Number(stats.totalPnlSol || 0) + unrealized;
-    els.walletBalance.textContent = fixed(walletSol);
-    els.walletMenuSol.textContent = `${fixed(walletSol)} SOL`;
+    els.walletBalance.textContent = 'connected';
+    els.walletMenuSol.textContent = 'Not loaded';
     els.walletMenuEquity.textContent = `${fixed(equity)} SOL`;
     els.walletMenuHoldings.textContent = positions.length;
     els.walletMenuSwaps.textContent = swapCount;
   }
+  els.emergencyButton.textContent = state.config.emergencyStop ? 'Clear Stop' : 'Emergency Stop';
+  els.emergencyButton.classList.toggle('armed', Boolean(state.config.emergencyStop));
 
   renderTicker(state.watchedTokens || []);
   renderOnboarding(state);
@@ -194,6 +196,7 @@ function renderBeginner(state) {
   els.bestCoinCard.className = 'best-coin-card';
   els.bestCoinCard.innerHTML = `
     <div class="best-title"><strong>${tokenIcon(best)}${tokenName(best)}</strong><span class="state ${safeClass(best.status)}">${escapeHtml(best.status || 'WATCHING')}</span></div>
+    <div class="contract-copy"><span>${escapeHtml(best.mint)}</span><button class="copy-chip" data-action="copy-mint" data-mint="${escapeAttr(best.mint)}">Copy Contract</button></div>
     <canvas class="analysis-chart" width="520" height="170"></canvas>
     <div class="best-actions">
       <button class="action-button profit" data-action="paper-buy" data-mint="${escapeAttr(best.mint)}">Paper Buy</button>
@@ -343,13 +346,13 @@ function renderScanner(tokens) {
     const selected = selectedMint === t.mint ? 'selected' : '';
     const fresh = t.ageMs < 9000 ? 'fresh' : '';
     return `<tr class="${selected} ${fresh}" data-mint="${escapeAttr(t.mint)}">
-      <td class="token-cell"><strong>${tokenIcon(t)}${tokenName(t)}</strong><small><span class="contract-line">${short(t.mint)} <button class="copy-chip" data-action="copy-mint" data-mint="${escapeAttr(t.mint)}">Copy</button></span> / ${age(t.ageMs)} / ${escapeHtml(t.source || 'market')}</small></td>
-      <td class="${scoreClass(score, threshold)}">${score}</td>
-      <td class="${t.rugRiskScore > 65 ? 'red' : t.rugRiskScore > 42 ? 'yellow' : 'green'}">${Math.round(t.rugRiskScore || 0)}</td>
-      <td>${fixed(t.buyVolumeSol + t.sellVolumeSol)}<div class="heat" style="opacity:${Math.min(1, 0.25 + (t.volumeSpike || 0) / 8)}"></div></td>
-      <td><span class="state ${safeClass(t.status)}">${escapeHtml(t.status || 'WATCHING')}</span></td>
-      <td class="spark-cell"><canvas class="row-spark" width="90" height="28" data-spark="${escapeAttr(t.mint)}"></canvas></td>
-      <td><div class="row-actions">
+      <td data-label="Token" class="token-cell"><strong>${tokenIcon(t)}${tokenName(t)}</strong><small><span class="contract-line">${short(t.mint)} <button class="copy-chip" data-action="copy-mint" data-mint="${escapeAttr(t.mint)}">Copy</button></span> / ${age(t.ageMs)} / ${escapeHtml(t.source || 'market')}</small></td>
+      <td data-label="Score" class="${scoreClass(score, threshold)}">${score}</td>
+      <td data-label="Risk" class="${t.rugRiskScore > 65 ? 'red' : t.rugRiskScore > 42 ? 'yellow' : 'green'}">${Math.round(t.rugRiskScore || 0)}</td>
+      <td data-label="Volume">${fixed(t.buyVolumeSol + t.sellVolumeSol)}<div class="heat" style="opacity:${Math.min(1, 0.25 + (t.volumeSpike || 0) / 8)}"></div></td>
+      <td data-label="Status"><span class="state ${safeClass(t.status)}">${escapeHtml(t.status || 'WATCHING')}</span></td>
+      <td data-label="Chart" class="spark-cell"><canvas class="row-spark" width="90" height="28" data-spark="${escapeAttr(t.mint)}"></canvas></td>
+      <td data-label="Action"><div class="row-actions">
         <button class="mini-button" data-action="paper-buy" data-mint="${escapeAttr(t.mint)}">Paper Buy</button>
         <button class="mini-button" data-action="analyze" data-mint="${escapeAttr(t.mint)}">View Chart</button>
         <button class="mini-button" data-action="block-reason" data-mint="${escapeAttr(t.mint)}">Block Reason</button>
@@ -559,6 +562,7 @@ function eventHtml(event) {
   if (event.type === 'trade:open') return eventCard('EXECUTED', 'Paper entry filled', `${tokenName(event.position)} / ${fixed(event.position.sizeSol)} SOL`, event.position.reasons.join(' | '), time);
   if (event.type === 'trade:partialExit') return eventCard('PROFIT', 'Profit secured', `${short(event.mint)} / ${pct(event.pct)} sold`, `${event.reason} / PnL ${fixed(event.pnlSol)} SOL`, time);
   if (event.type === 'trade:close') return eventCard(event.pnlSol >= 0 ? 'PROFIT' : 'WARNING', 'Position exited', `${short(event.mint)} / PnL ${fixed(event.pnlSol)} SOL`, `${event.reason} / entry ${event.entryScore} / exit ${event.exitScore ?? '--'}`, time);
+  if (event.type === 'risk:emergencyStop') return eventCard(event.enabled ? 'CRITICAL' : 'INFO', 'Emergency stop', event.enabled ? 'New entries blocked' : 'New entries allowed', event.message, time);
   if (event.type === 'feed:error') return eventCard('CRITICAL', 'Feed error', 'Data stream interruption', event.message, time);
   return '';
 }
@@ -802,8 +806,6 @@ function openExecutionModal(token, mode) {
   const sizeSol = latestState.config.risk.maxPositionSizeSol;
   const slippage = latestState.config.risk.maxSlippagePct;
   const expectedTokens = token.price ? sizeSol / token.price : 0;
-  const latency = Math.round(320 + Math.random() * 900);
-  const signature = randomSignature();
   els.executionTitle.textContent = live ? 'Live Execution Ticket' : 'Paper Execution Ticket';
   els.executionSubtitle.textContent = `${tokenName(token)} / ${short(token.mint)} / ${live ? 'wallet confirmation required' : 'realistic paper fill simulator'}`;
   els.executionBody.innerHTML = `
@@ -825,7 +827,7 @@ function openExecutionModal(token, mode) {
     </div>
     <div class="reason-box">
       <strong>${live ? 'Live mode is protected' : 'Paper execution realism'}</strong>
-      <div>${live ? 'Frontend can prepare a ticket, but live broadcast remains blocked until a secure backend wallet broker is configured.' : 'Paper mode uses live market data and simulates fill, slippage, fee, latency, partial fill risk, and confirmation without risking SOL.'}</div>
+      <div>${live ? 'Frontend can prepare a ticket, but live broadcast remains blocked until a secure backend wallet broker is configured.' : 'Paper mode submits to the backend paper broker. The fill is recorded with a backend paper execution ID, not a fake blockchain transaction.'}</div>
     </div>
     <div class="modal-actions">
       <button class="action-button profit" data-action="${live ? 'live-disabled' : 'confirm-paper-buy'}" data-mint="${escapeAttr(token.mint)}">${live ? 'Live Disabled' : 'Confirm Paper Buy'}</button>
@@ -834,7 +836,7 @@ function openExecutionModal(token, mode) {
     <div class="execution-steps">
       <div class="execution-step active" id="execStep1"><small>1 / Wallet</small><strong>${walletConnected ? 'Wallet session verified' : 'Waiting for Phantom/Solflare connection'}</strong></div>
       <div class="execution-step" id="execStep2"><small>2 / Quote</small><strong>Building route and slippage envelope</strong></div>
-      <div class="execution-step" id="execStep3"><small>3 / Broadcast</small><strong>${live ? 'Blocked until secure live broker exists' : 'Paper transaction pending'}</strong></div>
+      <div class="execution-step" id="execStep3"><small>3 / Backend</small><strong>${live ? 'Blocked until secure live broker exists' : 'Waiting for backend paper confirmation'}</strong></div>
       <div class="execution-step" id="execStep4"><small>4 / Confirmation</small><strong class="signature">--</strong></div>
     </div>`;
   els.executionModal.classList.remove('hidden');
@@ -864,10 +866,10 @@ async function confirmPaperBuy(mint) {
   swapCount += 1;
   markStep('execStep3', 'done');
   markStep('execStep4', 'done');
-  const sig = randomSignature();
+  const executionId = result.execution?.id || 'paper-fill';
   const step = q('#execStep4');
-  if (step) step.querySelector('strong').textContent = `${sig.slice(0, 18)}... / backend filled`;
-  if (token) addWalletActivity('Paper buy filled', `${tokenName(token)} / ${fixed(sizeSol)} SOL / ${sig.slice(0, 10)}...`);
+  if (step) step.querySelector('strong').textContent = `${executionId} / backend filled`;
+  if (token) addWalletActivity('Paper buy filled', `${tokenName(token)} / ${fixed(sizeSol)} SOL / ${executionId}`);
   toast('Paper buy filled');
   await refresh();
 }
@@ -905,13 +907,6 @@ function addWalletActivity(title, detail) {
   while (els.walletActivity.children.length > 8) els.walletActivity.lastChild.remove();
 }
 
-function randomSignature() {
-  const chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-  let sig = '';
-  for (let i = 0; i < 88; i += 1) sig += chars[Math.floor(Math.random() * chars.length)];
-  return sig;
-}
-
 function healthScore(state) {
   if (!state.watchedTokens.length) return '--';
   const open = state.openPositions.length;
@@ -946,38 +941,52 @@ function escapeHtml(value = '') {
 function escapeAttr(value = '') { return escapeHtml(value).replace(/`/g, '&#096;'); }
 function safeClass(value = '') { return String(value).replace(/[^a-zA-Z0-9_-]/g, ''); }
 
-els.walletButton.addEventListener('click', () => {
+els.walletButton.addEventListener('click', async () => {
   if (walletConnected) {
     els.walletMenu.classList.toggle('hidden');
     return;
   }
-  toast('Opening Phantom / Solflare approval');
-  els.walletMeta.textContent = 'Awaiting wallet approval...';
-  setTimeout(() => {
+  const provider = window.solana || window.phantom?.solana;
+  if (!provider?.connect) {
+    toast('No Solana wallet detected. Install Phantom or Solflare to connect.');
+    els.walletMeta.textContent = 'Wallet not detected';
+    return;
+  }
+  try {
+    toast('Opening wallet approval');
+    els.walletMeta.textContent = 'Awaiting wallet approval...';
+    const response = await provider.connect();
+    walletAddress = String(response.publicKey || provider.publicKey || '');
+    if (!walletAddress) throw new Error('wallet address unavailable');
     walletConnected = true;
     els.walletButton.classList.add('connected');
-    els.walletLabel.textContent = '8Jp4x...Q91K';
-    els.walletMeta.textContent = latestState?.config?.mode === 'live' ? 'Live wallet connected' : 'Paper mode connected';
-    els.walletBalance.textContent = '12.4860';
-    els.walletMenuAddress.textContent = '8Jp4x2YabM...Q91K';
-    els.walletMode.textContent = latestState?.config?.mode === 'live' ? 'Live Mode' : 'Paper Mode';
-    addWalletActivity('Wallet connected', latestState?.config?.mode === 'live' ? 'Live wallet linked' : 'Paper mode: no funds at risk');
+    els.walletLabel.textContent = short(walletAddress);
+    els.walletMeta.textContent = 'Wallet connected / paper trading only';
+    els.walletBalance.textContent = 'balance not loaded';
+    els.walletMenuAddress.textContent = walletAddress;
+    els.walletMode.textContent = 'Paper Mode';
+    addWalletActivity('Wallet connected', `${short(walletAddress)} / live trading disabled`);
     toast('Wallet connected');
-  }, 850);
+  } catch (error) {
+    els.walletMeta.textContent = 'Wallet connection rejected';
+    toast(error.message || 'Wallet connection failed');
+  }
 });
 
 els.copyWallet.addEventListener('click', (event) => {
   event.stopPropagation();
-  copyText('8Jp4x2YabM111111111111111111111111111111Q91K', 'Wallet copied');
+  copyText(walletAddress, 'Wallet copied');
 });
 
 els.openWalletSolscan.addEventListener('click', (event) => {
   event.stopPropagation();
-  openUrl('https://solscan.io/account/8Jp4x2YabM111111111111111111111111111111Q91K');
+  if (!walletAddress) return toast('No wallet connected');
+  openUrl(`https://solscan.io/account/${encodeURIComponent(walletAddress)}`);
 });
 
 els.disconnectWallet.addEventListener('click', () => {
   walletConnected = false;
+  walletAddress = '';
   els.walletButton.classList.remove('connected');
   els.walletLabel.textContent = 'Connect Wallet';
   els.walletMeta.textContent = 'Paper mode: no funds at risk';
@@ -985,8 +994,12 @@ els.disconnectWallet.addEventListener('click', () => {
   els.walletMenu.classList.add('hidden');
 });
 
-els.emergencyButton.addEventListener('click', () => {
-  toast('Emergency stop armed in UI / backend live trading remains disabled');
+els.emergencyButton.addEventListener('click', async () => {
+  const active = !(latestState?.config?.emergencyStop);
+  const result = await apiPost('/api/emergency-stop', { active });
+  if (!result.ok) return toast(result.error || 'Emergency stop failed');
+  toast(result.emergencyStop ? 'Emergency stop enabled' : 'Emergency stop cleared');
+  await refresh();
 });
 
 els.tokenSearch.addEventListener('input', () => latestState && renderScanner(latestState.watchedTokens || []));

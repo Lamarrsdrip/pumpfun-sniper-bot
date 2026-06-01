@@ -42,4 +42,9 @@ export class RiskManager {
       this.consecutiveLosses = 0;
     }
   }
+
+  setKillSwitch(active) {
+    this.killSwitch = Boolean(active);
+    return this.killSwitch;
+  }
 }

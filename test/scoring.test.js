@@ -151,6 +151,16 @@ test('status API shape keeps live trading disabled and key state explicit', () =
   assert.equal(status.liveTrading.enabled, false);
 });
 
+test('emergency stop blocks new paper entries', () => {
+  const cfg = cloneConfig();
+  const { engine, risk } = testEngine(cfg);
+  const result = engine.setEmergencyStop(true);
+  assert.equal(result.emergencyStop, true);
+  assert.ok(risk.canOpen({ openPositions: 0, equitySol: cfg.paperStartingSol, at: 1 }).includes('manual/emergency kill switch is active'));
+  engine.setEmergencyStop(false);
+  assert.equal(risk.killSwitch, false);
+});
+
 function testTradeManager() {
   const cfg = cloneConfig();
   const events = new BotEvents();

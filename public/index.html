@@ -159,7 +159,7 @@
         <section class="panel positions-panel">
           <div class="panel-head">
             <div><h2>Active Execution</h2><p id="positionCount">0 open positions</p></div>
-            <div class="segmented"><button class="active">Live PnL</button><button>Protection</button></div>
+            <span class="mode-pill">Paper managed</span>
           </div>
           <div id="positions" class="position-stack"></div>
         </section>
@@ -167,7 +167,7 @@
         <section class="panel performance-panel">
           <div class="panel-head">
             <div><h2>Performance</h2><p>Realized equity with drawdown and trade markers</p></div>
-            <div class="segmented"><button class="active" data-chart="realized">Realized</button><button data-chart="exposure">Exposure</button></div>
+            <span class="mode-pill">Equity curve</span>
           </div>
           <canvas id="pnlChart" width="720" height="260"></canvas>
           <div class="performance-meta">

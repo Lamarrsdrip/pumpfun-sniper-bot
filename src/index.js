@@ -19,7 +19,7 @@ const tradeManager = new TradeManager(config, broker, events);
 const portfolio = new PortfolioManager(config.paperStartingSol);
 const engine = new SniperEngine({ config, events, risk, tradeManager, broker, portfolio });
 
-for (const name of ['token:seen', 'token:watching', 'token:qualified', 'token:blocked', 'trade:open', 'trade:add', 'trade:partialExit', 'trade:close', 'feed:status', 'feed:sourceHealth', 'feed:migration', 'feed:error']) {
+for (const name of ['token:seen', 'token:watching', 'token:qualified', 'token:blocked', 'trade:open', 'trade:add', 'trade:partialExit', 'trade:close', 'risk:emergencyStop', 'feed:status', 'feed:sourceHealth', 'feed:migration', 'feed:error']) {
   events.on(name, (event) => logger.write(sanitizeEvent(event)));
 }
 
