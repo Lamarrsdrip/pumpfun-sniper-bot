@@ -1,0 +1,16 @@
+{
+  "name": "pumpfun-controlled-sniper-bot",
+  "version": "0.1.0",
+  "description": "Capital-first Pump.fun meme-coin scanner, scorer, paper trader, simulator, and dashboard.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node src/index.js",
+    "scan": "node src/index.js scan",
+    "simulate": "node src/index.js simulate data/sample-history.jsonl",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

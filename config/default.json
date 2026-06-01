@@ -1,0 +1,70 @@
+{
+  "mode": "paper",
+  "dataMode": "hybrid",
+  "paperStartingSol": 10,
+  "strictScoreThreshold": 80,
+  "watch": {
+    "minMarketCapSol": 20,
+    "maxMarketCapSol": 180,
+    "maxTokenAgeMs": 180000,
+    "evaluationWindowMs": 45000,
+    "minTrades": 12,
+    "minUniqueBuyers": 8,
+    "minBuySellRatio": 1.65,
+    "minBondingCurveProgress": 0.04,
+    "maxBondingCurveProgress": 0.82,
+    "maxTopHolderPct": 0.3,
+    "maxTop5HolderPct": 0.68,
+    "maxDevSoldPct": 0.02,
+    "maxInsiderWalletPct": 0.45,
+    "maxPriceExtensionPct": 1.65,
+    "minLiquidityQuality": 35,
+    "maxFakeVolumeScore": 70,
+    "volumeSpikeMin": 2.2
+  },
+  "risk": {
+    "maxRiskPerTradeSol": 0.05,
+    "maxPositionSizeSol": 0.22,
+    "maxSlippagePct": 0.08,
+    "maxDailyLossSol": 0.35,
+    "maxOpenTrades": 2,
+    "cooldownAfterLossMs": 600000,
+    "emergencyStopDrawdownSol": 0.6,
+    "stopAfterConsecutiveLosses": 3,
+    "abnormalSellPressureRatio": 1.45,
+    "volumeCollapsePct": 0.62
+  },
+  "management": {
+    "hardStopLossPct": 0.18,
+    "emergencyStopLossPct": 0.24,
+    "takeProfits": [
+      { "profitPct": 0.25, "sellPct": 0.3 },
+      { "profitPct": 0.6, "sellPct": 0.4 },
+      { "profitPct": 1.0, "sellPct": 0.2 }
+    ],
+    "runnerPct": 0.1,
+    "trailingStartPct": 0.28,
+    "trailingDistancePct": 0.16,
+    "staleMomentumMs": 30000
+  },
+  "mockFeed": {
+    "enabled": false,
+    "fallbackOnly": true,
+    "fallbackAfterMs": 12000,
+    "newTokenEveryMs": 4200,
+    "tradeEveryMs": 650,
+    "maxActiveTokens": 10
+  },
+  "sources": {
+    "dexScreenerPollMs": 12000,
+    "solanaRpcPollMs": 5000,
+    "solanaRpcUrl": "https://api.mainnet-beta.solana.com",
+    "heliusApiKey": "",
+    "birdeyeApiKey": "",
+    "jupiterQuoteApi": "https://quote-api.jup.ag/v6"
+  },
+  "socialKeywords": {
+    "positive": ["ai", "trump", "sol", "cat", "dog", "chad", "based", "viral", "mascot", "pump"],
+    "negative": ["test", "rug", "scam", "copy", "clone", "dev", "v2"]
+  }
+}

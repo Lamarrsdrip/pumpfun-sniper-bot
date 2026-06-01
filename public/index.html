@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pump.fun Sniper Command Center</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="command-header">
+        <div class="brand">
+          <div class="logo-mark">PF</div>
+          <div>
+            <h1>Pump.fun Sniper Command</h1>
+            <p>Real-time paper execution, capital protection, and strict opportunity scoring.</p>
+          </div>
+        </div>
+
+        <section class="account-console">
+          <button id="walletButton" class="wallet-card">
+            <span class="wallet-dot"></span>
+            <span>
+              <strong id="walletLabel">Connect Wallet</strong>
+              <small id="walletMeta">Paper mode: no funds at risk</small>
+            </span>
+          </button>
+          <div class="header-stat"><small>Wallet SOL</small><strong id="walletBalance">--</strong></div>
+          <div class="header-stat"><small>Total Equity</small><strong id="equity">0.0000</strong></div>
+          <div class="header-stat"><small>Today PnL</small><strong id="pnl">0.0000</strong></div>
+          <div class="header-stat"><small>Positions</small><strong id="activePositions">0</strong></div>
+          <div class="health">
+            <span id="feedStatus" class="health-dot"></span>
+            <div><strong id="networkLabel">SYNCING</strong><small id="connectionHealth">stream pending</small></div>
+          </div>
+          <span id="mode" class="mode-pill">PAPER</span>
+          <button id="emergencyButton" class="danger-button">Emergency Stop</button>
+        </section>
+      </header>
+
+      <section class="ticker-tape" id="tickerTape"></section>
+      <section class="source-strip" id="sourceStrip"></section>
+
+      <section class="money-strip">
+        <article><small>Open Risk</small><strong id="openRisk">0.0000</strong><span>SOL deployed</span></article>
+        <article><small>Unrealized</small><strong id="unrealizedPnl">0.0000</strong><span>live mark</span></article>
+        <article><small>Win Rate</small><strong id="winRate">0%</strong><span id="tradeCount">0 closed</span></article>
+        <article><small>Blocked Risk</small><strong id="blocked">0</strong><span id="rugBlocks">0 rug-risk</span></article>
+        <article><small>Fees + Slip</small><strong id="fees">0.0000</strong><span>paper estimate</span></article>
+        <article><small>Health</small><strong id="healthScore">--</strong><span>execution stack</span></article>
+      </section>
+
+      <section class="intel-grid">
+        <article class="intel-card">
+          <div><small>Market Regime</small><strong id="marketRegime">--</strong><span id="marketRegimeDetail">Waiting for live flow</span></div>
+        </article>
+        <article class="intel-card">
+          <div><small>Execution Readiness</small><strong id="readinessScore">--</strong><span id="readinessDetail">Sources syncing</span></div>
+        </article>
+        <article class="intel-card wide">
+          <div><small>Missed-Run Guard</small><strong id="missedRunHeadline">No near-miss yet</strong><span id="missedRunDetail">The bot will flag tokens rising toward threshold before entry.</span></div>
+        </article>
+        <article class="intel-card wide">
+          <div><small>Run Capture</small><strong id="runCaptureHeadline">No clean run forming</strong><span id="runCaptureDetail">Watching for acceleration without chasing unsafe candles.</span></div>
+        </article>
+      </section>
+
+      <section class="main-grid">
+        <section class="panel scanner-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Sniper Feed</h2>
+              <p id="scannerCount">0 launches tracked</p>
+            </div>
+            <div class="scanner-tools">
+              <input id="tokenSearch" placeholder="Search token or mint">
+              <select id="statusFilter">
+                <option value="ALL">All states</option>
+                <option value="WATCHING">Watching</option>
+                <option value="QUALIFIED">Qualified</option>
+                <option value="ENTERED">Entered</option>
+                <option value="BLOCKED">Blocked</option>
+                <option value="EXITED">Exited</option>
+              </select>
+            </div>
+          </div>
+          <table class="scanner-table">
+            <thead>
+              <tr>
+                <th data-sort="status">State</th>
+                <th data-sort="symbol">Token</th>
+                <th data-sort="ageMs">Age</th>
+                <th data-sort="marketCapSol">MCap</th>
+                <th data-sort="bondingCurveProgress">Curve</th>
+                <th data-sort="buyVolumeSol">Volume</th>
+                <th data-sort="buySellRatio">Pressure</th>
+                <th data-sort="holderCount">Holders</th>
+                <th>Chart</th>
+                <th data-sort="rugRiskScore">Risk</th>
+                <th data-sort="score">Score</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="scannerRows"></tbody>
+          </table>
+        </section>
+
+        <aside class="analysis-panel panel">
+          <div class="panel-head">
+            <div>
+              <h2>Token Analysis</h2>
+              <p id="analysisSubtitle">Select a token from the sniper feed</p>
+            </div>
+            <span id="analysisScore" class="score-badge">--</span>
+          </div>
+          <div id="tokenDetail" class="token-detail empty-state">Waiting for selection.</div>
+        </aside>
+      </section>
+
+      <section class="panel alpha-panel">
+        <div class="panel-head">
+          <div><h2>Alpha Queue</h2><p>Ranked opportunities, near misses, and why the bot is waiting or engaging</p></div>
+          <span id="alphaCount">0 queued</span>
+        </div>
+        <div id="alphaQueue" class="alpha-queue"></div>
+      </section>
+
+      <section class="positions-grid">
+        <section class="panel positions-panel">
+          <div class="panel-head">
+            <div><h2>Active Execution</h2><p id="positionCount">0 open positions</p></div>
+            <div class="segmented"><button class="active">Live PnL</button><button>Protection</button></div>
+          </div>
+          <div id="positions" class="position-stack"></div>
+        </section>
+
+        <section class="panel performance-panel">
+          <div class="panel-head">
+            <div><h2>Performance</h2><p>Realized equity with drawdown and trade markers</p></div>
+            <div class="segmented"><button class="active" data-chart="realized">Realized</button><button data-chart="exposure">Exposure</button></div>
+          </div>
+          <canvas id="pnlChart" width="720" height="260"></canvas>
+          <div class="performance-meta">
+            <span>Daily PnL <strong id="dailyPnl">0.0000</strong></span>
+            <span>Max DD <strong id="maxDrawdown">0%</strong></span>
+            <span>Exposure <strong id="exposurePct">0%</strong></span>
+          </div>
+        </section>
+      </section>
+
+      <section class="bottom-grid">
+        <section class="panel risk-panel">
+          <div class="panel-head">
+            <div><h2>Risk Console</h2><p>Capital protection is wired into execution</p></div>
+            <span id="threshold" class="mode-pill">Score 80+</span>
+          </div>
+          <div class="presets" id="riskPresets">
+            <button data-preset="safe">Safe</button>
+            <button class="active" data-preset="balanced">Balanced</button>
+            <button data-preset="sniper">Sniper</button>
+            <button data-preset="aggressive">Aggressive</button>
+          </div>
+          <div id="settings" class="risk-settings"></div>
+          <div id="riskImpact" class="risk-impact"></div>
+        </section>
+
+        <section class="panel logs-panel">
+          <div class="panel-head">
+            <div><h2>Execution Feed</h2><p>Scanner, risk, wallet, and profit events</p></div>
+            <span id="eventCount">0 events</span>
+          </div>
+          <div id="events" class="events"></div>
+        </section>
+
+        <section class="panel protection-panel">
+          <div class="panel-head">
+            <div><h2>Protection Actions</h2><p>Automatic blocks and danger alerts</p></div>
+            <span>capital saved</span>
+          </div>
+          <div id="alerts" class="alert-list"></div>
+          <div id="blockedList" class="blocked-list"></div>
+        </section>
+      </section>
+
+      <div id="toastStack" class="toast-stack"></div>
+      <div id="walletMenu" class="wallet-menu hidden">
+        <div class="wallet-menu-head">
+          <strong id="walletMenuAddress">Not connected</strong>
+          <button id="copyWallet">Copy</button>
+          <button id="openWalletSolscan">Solscan</button>
+          <button id="disconnectWallet">Disconnect</button>
+        </div>
+        <div class="wallet-mode"><span id="walletMode">Paper Mode</span><small>Execution is simulated unless secure live broker is configured.</small></div>
+        <div class="wallet-menu-grid">
+          <div><small>SOL Balance</small><strong id="walletMenuSol">--</strong></div>
+          <div><small>Paper Equity</small><strong id="walletMenuEquity">--</strong></div>
+          <div><small>Holdings</small><strong id="walletMenuHoldings">0</strong></div>
+          <div><small>Recent Swaps</small><strong id="walletMenuSwaps">0</strong></div>
+        </div>
+        <div id="walletActivity" class="wallet-activity"></div>
+      </div>
+
+      <div id="executionModal" class="modal-backdrop hidden">
+        <section class="execution-modal">
+          <div class="panel-head">
+            <div><h2 id="executionTitle">Execution Preview</h2><p id="executionSubtitle">Paper fill simulator</p></div>
+            <button id="closeExecution" class="mini-button">CLOSE</button>
+          </div>
+          <div id="executionBody"></div>
+        </section>
+      </div>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

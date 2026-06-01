@@ -1,0 +1,8 @@
+.env
+.env.local
+node_modules/
+data/history.jsonl
+*.log
+*.zip
+*.tar.gz
+.DS_Store
