@@ -18,7 +18,7 @@
           <button id="walletButton" class="wallet-card">
             <span class="wallet-dot"></span>
             <span>
-              <strong id="walletLabel">Connect Wallet</strong>
+              <strong id="walletLabel">Start Paper</strong>
               <small><span id="walletMeta">Paper mode active</span> <span id="walletBalance">--</span></small>
             </span>
           </button>
@@ -47,8 +47,8 @@
       </nav>
 
       <section class="onboarding panel app-page" data-page-panel="trade" id="onboarding">
-        <div class="onboard-step active"><small>1</small><strong>Connect Wallet</strong><span>Connect Phantom or Solflare for account identity.</span></div>
-        <div class="onboard-step"><small>2</small><strong>Choose Mode</strong><span>Paper is default; live needs a configured backend broker.</span></div>
+        <div class="onboard-step active"><small>1</small><strong>Start Paper</strong><span>Paper mode uses a local session and never opens a wallet.</span></div>
+        <div class="onboard-step"><small>2</small><strong>Choose Mode</strong><span>Live mode connects Phantom, Solflare, or another Solana wallet only after broker setup.</span></div>
         <div class="onboard-step"><small>3</small><strong>Start Scanner</strong><span>Watch real source status.</span></div>
         <div class="onboard-step"><small>4</small><strong>Review Token</strong><span>Check score, risk, and chart.</span></div>
         <div class="onboard-step"><small>5</small><strong>Paper Buy/Sell</strong><span>Execute through backend paper endpoints.</span></div>
@@ -127,7 +127,7 @@
           <table class="scanner-table">
             <thead>
               <tr>
-                <th data-sort="symbol">Token</th>
+                <th data-sort="ageMs">Token / Newest</th>
                 <th data-sort="score">Score</th>
                 <th data-sort="rugRiskScore">Risk</th>
                 <th data-sort="buyVolumeSol">Volume</th>
@@ -244,6 +244,20 @@
           <div><small>Recent Swaps</small><strong id="walletMenuSwaps">0</strong></div>
         </div>
         <div id="walletActivity" class="wallet-activity"></div>
+      </div>
+
+      <div id="walletConnectModal" class="modal-backdrop hidden">
+        <section class="execution-modal wallet-connect-modal">
+          <div class="panel-head">
+            <div><h2>Connect Live Wallet</h2><p>Choose a detected Solana wallet. Paper mode does not need a wallet.</p></div>
+            <button id="closeWalletConnect" class="mini-button">CLOSE</button>
+          </div>
+          <div id="walletProviderList" class="wallet-provider-list"></div>
+          <div class="wallet-connect-help">
+            <strong>Phone connection</strong>
+            <span>Open this app inside Phantom, Solflare, or SafePal mobile browser, then choose that wallet here. Desktop QR flows depend on the wallet extension that is installed.</span>
+          </div>
+        </section>
       </div>
 
       <div id="executionModal" class="modal-backdrop hidden">

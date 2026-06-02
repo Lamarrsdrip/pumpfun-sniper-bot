@@ -157,6 +157,7 @@ export class TokenState {
       mint: this.mint,
       name: this.name,
       symbol: this.symbol,
+      createdAt: this.createdAt,
       ageMs: at - this.createdAt,
       devWallet: this.devWallet,
       marketCapSol: this.marketCapSol,

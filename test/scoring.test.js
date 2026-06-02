@@ -5,6 +5,7 @@ import { TokenState } from '../src/token-state.js';
 import { blockReasons, scoreToken } from '../src/scoring.js';
 import { RiskManager } from '../src/risk.js';
 import { PaperBroker } from '../src/broker.js';
+import { LiveBroker } from '../src/broker.js';
 import { TradeManager } from '../src/trade-manager.js';
 import { BotEvents } from '../src/events.js';
 import { SniperEngine } from '../src/engine.js';
@@ -60,6 +61,32 @@ test('paper broker buy/sell/equity includes open market value and fees', async (
   assert.equal(broker.openValueSol, 0);
   assert.ok(broker.cashSol > 10.45);
   assert.ok(broker.feesSol > 0);
+});
+
+test('confirmed scout add charges only added size', async () => {
+  const { tradeManager, broker } = testTradeManager();
+  const position = await openTestPosition(tradeManager);
+  const afterScoutCash = broker.cashSol;
+  await tradeManager.addToPosition(
+    position,
+    { mint: position.mint, price: 1.1 },
+    { score: 88 },
+    ['confirmed add'],
+    2000,
+    0.25
+  );
+  const addCost = afterScoutCash - broker.cashSol;
+  assert.ok(addCost > 0.25);
+  assert.ok(addCost < 0.27);
+  assert.equal(position.sizeSol, 1.25);
+});
+
+test('paper sell execution includes slippage cost', async () => {
+  const broker = new PaperBroker(10);
+  const position = { entryPrice: 1, currentPrice: 1, sizeSol: 1, remainingPct: 1, unrealizedPnlSol: 0 };
+  await broker.buy(position, { maxSlippagePct: 0.08 });
+  await broker.sell(position, 1, { exitValueSol: 1, maxSlippagePct: 0.08 });
+  assert.ok(broker.lastExecution.slippageSol > 0);
 });
 
 test('hard stop loss closes position', async () => {
@@ -135,6 +162,15 @@ test('dashboard state API shape', () => {
   assert.ok('sourceHealth' in state);
 });
 
+test('dashboard watched tokens are newest first', () => {
+  const cfg = cloneConfig();
+  const { engine } = testEngine(cfg);
+  engine.onNewToken({ mint: 'OLD111111111111111111111111111111111111111', name: 'Old', symbol: 'OLD', timestamp: 1000 }, 1000);
+  engine.onNewToken({ mint: 'NEW111111111111111111111111111111111111111', name: 'New', symbol: 'NEW', timestamp: 2000 }, 2000);
+  const state = engine.dashboardState();
+  assert.equal(state.watchedTokens[0].mint, 'NEW111111111111111111111111111111111111111');
+});
+
 test('status API shape keeps live trading disabled and key state explicit', () => {
   const cfg = cloneConfig();
   cfg.pumpPortalApiKey = '';
@@ -149,6 +185,28 @@ test('status API shape keeps live trading disabled and key state explicit', () =
   assert.equal(status.sources.holders.birdeyeApiKey, 'missing');
   assert.equal(status.broker.paper, true);
   assert.equal(status.liveTrading.enabled, false);
+});
+
+test('live broker sends wallet address to external provider payload', async () => {
+  const cfg = cloneConfig();
+  cfg.live.enabled = true;
+  cfg.live.dryRun = false;
+  cfg.live.tradeApiUrl = 'https://broker.example/trade';
+  cfg.live.tradeApiKey = 'test-key';
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, body: JSON.parse(options.body) });
+    return new Response(JSON.stringify({ txSignature: 'sig123' }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const broker = new LiveBroker(cfg);
+    await broker.buy({ mint: 'MINT', symbol: 'M', name: 'Mint', sizeSol: 0.1, walletAddress: 'Wallet111' }, { maxSlippagePct: 0.05 });
+    assert.equal(calls[0].body.walletAddress, 'Wallet111');
+    assert.equal(broker.lastExecution.txSignature, 'sig123');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('emergency stop blocks new paper entries', () => {

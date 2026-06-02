@@ -1,7 +1,7 @@
 import { pctChange } from './math.js';
 
 export class Position {
-  constructor({ mint, name, symbol, entryPrice, sizeSol, score, reasons, openedAt, entryType = 'confirmed' }) {
+  constructor({ mint, name, symbol, entryPrice, sizeSol, score, reasons, openedAt, entryType = 'confirmed', walletAddress = '' }) {
     this.mint = mint;
     this.name = name;
     this.symbol = symbol;
@@ -26,6 +26,7 @@ export class Position {
     this.closed = false;
     this.entryType = entryType;
     this.addedAfterScout = false;
+    this.walletAddress = walletAddress;
   }
 }
 
@@ -37,7 +38,7 @@ export class TradeManager {
     this.positions = new Map();
   }
 
-  async open(snapshot, score, reasons, at = Date.now(), sizeSol, entryType = 'confirmed') {
+  async open(snapshot, score, reasons, at = Date.now(), sizeSol, entryType = 'confirmed', context = {}) {
     const position = new Position({
       mint: snapshot.mint,
       name: snapshot.name,
@@ -47,16 +48,17 @@ export class TradeManager {
       score: score.score,
       reasons,
       openedAt: at,
-      entryType
+      entryType,
+      walletAddress: context.walletAddress || ''
     });
-    const execution = await this.broker.buy(position, { maxSlippagePct: this.config.risk.maxSlippagePct });
+    const execution = await this.broker.buy(position, { maxSlippagePct: this.config.risk.maxSlippagePct, walletAddress: context.walletAddress || '' });
     this.positions.set(position.mint, position);
     this.broker.markToMarket([...this.positions.values()]);
     this.events.emit('trade:open', { type: 'trade:open', at, position, execution, snapshot });
     return position;
   }
 
-  async addToPosition(position, snapshot, score, reasons, at = Date.now(), addSizeSol = 0) {
+  async addToPosition(position, snapshot, score, reasons, at = Date.now(), addSizeSol = 0, context = {}) {
     if (!position || position.closed || addSizeSol <= 0) return null;
     const priorSize = position.sizeSol;
     const priorValue = priorSize * position.entryPrice;
@@ -68,7 +70,9 @@ export class TradeManager {
     position.score = score.score;
     position.reasons = [...new Set([...position.reasons, ...reasons])].slice(0, 8);
     position.addedAfterScout = true;
-    const execution = await this.broker.buy(position, { maxSlippagePct: this.config.risk.maxSlippagePct });
+    const walletAddress = context.walletAddress || position.walletAddress || '';
+    const addLeg = { ...position, sizeSol: addSizeSol, walletAddress };
+    const execution = await this.broker.buy(addLeg, { maxSlippagePct: this.config.risk.maxSlippagePct, walletAddress });
     this.broker.markToMarket([...this.positions.values()]);
     this.events.emit('trade:add', { type: 'trade:add', at, position, addSizeSol, execution, snapshot, reasons });
     return position;
@@ -114,7 +118,7 @@ export class TradeManager {
     }
   }
 
-  async sellPartial(position, snapshot, sellPct, reason, at) {
+  async sellPartial(position, snapshot, sellPct, reason, at, context = {}) {
     const pct = Math.min(position.remainingPct, sellPct);
     if (pct <= 0) return;
     const pnlSol = position.sizeSol * pct * pctChange(position.entryPrice, snapshot.price);
@@ -123,6 +127,7 @@ export class TradeManager {
     const execution = await this.broker.sell(position, pct, {
       reason,
       maxSlippagePct: this.config.risk.maxSlippagePct,
+      walletAddress: context.walletAddress || position.walletAddress || '',
       exitValueSol: position.sizeSol * pct + pnlSol
     });
     this.broker.markToMarket([...this.positions.values()]);
@@ -130,7 +135,7 @@ export class TradeManager {
     if (position.remainingPct <= 0.001) await this.close(position, snapshot, 'fully scaled out', at);
   }
 
-  async close(position, snapshot, reason, at = Date.now(), score = null) {
+  async close(position, snapshot, reason, at = Date.now(), score = null, context = {}) {
     if (position.closed) return;
     const remaining = position.remainingPct;
     const pnlSol = position.sizeSol * remaining * pctChange(position.entryPrice, snapshot.price);
@@ -141,6 +146,7 @@ export class TradeManager {
     const execution = await this.broker.sell(position, remaining, {
       reason,
       maxSlippagePct: this.config.risk.maxSlippagePct,
+      walletAddress: context.walletAddress || position.walletAddress || '',
       exitValueSol: position.sizeSol * remaining + pnlSol
     });
     this.positions.delete(position.mint);

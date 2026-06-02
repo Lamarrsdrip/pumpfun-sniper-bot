@@ -278,6 +278,7 @@ export class SniperEngine {
   async liveBuy(mint, options = {}, at = Date.now()) {
     if (this.config.mode !== 'live') throw new Error('set MODE=live before using live endpoints');
     if (!this.config.live?.enabled) throw new Error('set LIVE_TRADING_ENABLED=true before using live endpoints');
+    if (!String(options.walletAddress || '').trim()) throw new Error('live wallet address is required');
     const token = this.tokens.get(mint);
     if (!token) throw new Error('token is not being tracked');
     const snapshot = token.snapshot(at);
@@ -291,7 +292,7 @@ export class SniperEngine {
     const requestedSize = Number(options.sizeSol || 0);
     const sizeSol = requestedSize > 0 ? Math.min(requestedSize, this.risk.sizePosition(snapshot, score), this.config.risk.maxPositionSizeSol) : this.risk.sizePosition(snapshot, score);
     if (sizeSol <= 0) throw new Error('position size resolved to zero');
-    const position = await this.tradeManager.open(snapshot, score, explainEntry(snapshot, score), at, sizeSol, this.config.live?.dryRun ? 'live-dry-run' : 'live');
+    const position = await this.tradeManager.open(snapshot, score, explainEntry(snapshot, score), at, sizeSol, this.config.live?.dryRun ? 'live-dry-run' : 'live', { walletAddress: String(options.walletAddress || '') });
     token.status = 'ENTERED';
     token.statusReason = position.reasons.join(' | ');
     this.stats.bought += 1;
@@ -301,15 +302,16 @@ export class SniperEngine {
   async liveSell(mint, options = {}, at = Date.now()) {
     if (this.config.mode !== 'live') throw new Error('set MODE=live before using live endpoints');
     if (!this.config.live?.enabled) throw new Error('set LIVE_TRADING_ENABLED=true before using live endpoints');
+    if (!String(options.walletAddress || '').trim()) throw new Error('live wallet address is required');
     const position = this.tradeManager.positions.get(mint);
     if (!position) throw new Error('no open live position for token');
     const token = this.tokens.get(mint);
     const snapshot = token?.snapshot(at) || { mint, price: position.currentPrice || position.entryPrice, drawdownFromHighPct: position.maxDrawdownPct || 0 };
     const pct = Math.max(0, Math.min(1, Number(options.pct ?? 1)));
     if (pct <= 0 || pct >= position.remainingPct - 0.001) {
-      await this.tradeManager.close(position, snapshot, options.reason || 'manual live sell', at, token?.lastScore || null);
+      await this.tradeManager.close(position, snapshot, options.reason || 'manual live sell', at, token?.lastScore || null, { walletAddress: String(options.walletAddress || '') });
     } else {
-      await this.tradeManager.sellPartial(position, snapshot, pct, options.reason || 'manual live partial sell', at);
+      await this.tradeManager.sellPartial(position, snapshot, pct, options.reason || 'manual live partial sell', at, { walletAddress: String(options.walletAddress || '') });
     }
     return { ok: true, dryRun: Boolean(this.config.live?.dryRun), execution: this.broker.lastExecution };
   }
@@ -478,7 +480,10 @@ export class SniperEngine {
           exitConfidence: snapshot ? exitConfidence(snapshot, position) : 50
         };
       }),
-      watchedTokens: [...this.tokens.values()].slice(-80).map((token) => {
+      watchedTokens: [...this.tokens.values()]
+        .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+        .slice(0, 80)
+        .map((token) => {
         const snapshot = token.snapshot();
         if (this.tradeManager.positions.has(snapshot.mint)) snapshot.status = 'ENTERED';
         return publicSnapshot(snapshot);

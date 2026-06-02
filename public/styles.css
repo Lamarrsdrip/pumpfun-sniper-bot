@@ -984,6 +984,55 @@ p, small, label { color: var(--muted); }
   box-shadow: var(--shadow);
   padding: 14px;
 }
+.wallet-connect-modal {
+  width: min(520px, calc(100vw - 28px));
+}
+.wallet-provider-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.wallet-provider {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  min-height: 58px;
+  padding: 12px;
+  text-align: left;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: rgba(255,255,255,0.035);
+}
+.wallet-provider:hover {
+  border-color: rgba(39, 231, 162, 0.55);
+  background: rgba(39, 231, 162, 0.07);
+}
+.wallet-provider strong {
+  color: var(--text);
+  font-size: 14px;
+}
+.wallet-provider small,
+.wallet-provider-empty,
+.wallet-connect-help span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.wallet-provider-empty,
+.wallet-connect-help {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255,255,255,0.025);
+  padding: 10px;
+}
+.wallet-connect-help {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+}
+.wallet-connect-help strong {
+  color: var(--yellow);
+}
 .execution-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

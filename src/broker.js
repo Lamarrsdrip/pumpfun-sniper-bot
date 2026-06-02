@@ -21,13 +21,14 @@ export class PaperBroker {
     return this.lastExecution;
   }
 
-  async sell(position, pct, { exitValueSol = position.sizeSol * pct } = {}) {
+  async sell(position, pct, { exitValueSol = position.sizeSol * pct, maxSlippagePct = 0 } = {}) {
     if (pct <= 0) return;
     const proceeds = exitValueSol;
     const fee = proceeds * 0.005;
-    this.cashSol += Math.max(0, proceeds - fee);
-    this.feesSol += fee;
-    this.lastExecution = this.execution('sell', { feeSol: fee, slippageSol: 0, grossSol: proceeds, netSol: Math.max(0, proceeds - fee) });
+    const slippage = proceeds * Math.min(maxSlippagePct, 0.08) * 0.15;
+    this.cashSol += Math.max(0, proceeds - fee - slippage);
+    this.feesSol += fee + slippage;
+    this.lastExecution = this.execution('sell', { feeSol: fee, slippageSol: slippage, grossSol: proceeds, netSol: Math.max(0, proceeds - fee - slippage) });
     return this.lastExecution;
   }
 
@@ -114,6 +115,7 @@ export class LiveBroker {
       sizeSol: Number(position.sizeSol || 0) * Number(pct || 1),
       pct,
       maxSlippagePct: context.maxSlippagePct ?? this.config.risk?.maxSlippagePct,
+      walletAddress: context.walletAddress || position.walletAddress || '',
       reason: context.reason || '',
       dryRun: live.dryRun,
       requestedAt: new Date().toISOString()

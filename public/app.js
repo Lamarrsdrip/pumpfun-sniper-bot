@@ -79,6 +79,9 @@ els.disconnectWallet = q('#disconnectWallet');
 els.copyWallet = q('#copyWallet');
 els.openWalletSolscan = q('#openWalletSolscan');
 els.walletMode = q('#walletMode');
+els.walletConnectModal = q('#walletConnectModal');
+els.closeWalletConnect = q('#closeWalletConnect');
+els.walletProviderList = q('#walletProviderList');
 els.executionModal = q('#executionModal');
 els.executionTitle = q('#executionTitle');
 els.executionSubtitle = q('#executionSubtitle');
@@ -87,11 +90,12 @@ els.closeExecution = q('#closeExecution');
 
 let latestState = null;
 let selectedMint = null;
-let sortKey = 'score';
-let sortDir = -1;
+let sortKey = 'ageMs';
+let sortDir = 1;
 let eventTotal = 0;
 let walletConnected = false;
 let walletAddress = '';
+let walletSessionMode = '';
 let riskPreset = 'balanced';
 let chartMode = 'realized';
 let activePage = 'trade';
@@ -151,14 +155,15 @@ function renderState(state) {
   els.exposurePct.textContent = pct(maxRisk ? deployed / maxRisk : 0);
   els.healthScore.textContent = healthScore(state);
 
+  renderWalletPrompt(state.config);
   if (walletConnected) {
     els.walletBalance.textContent = 'connected';
-    els.walletMenuSol.textContent = 'Not loaded';
+    els.walletMenuSol.textContent = walletSessionMode === 'live' ? 'Not loaded' : 'Paper only';
     els.walletMenuEquity.textContent = `${fixed(equity)} SOL`;
     els.walletMenuHoldings.textContent = positions.length;
     els.walletMenuSwaps.textContent = swapCount;
-    els.walletMode.textContent = state.config.mode === 'live' ? 'Live Mode' : 'Paper Mode';
-    els.walletMeta.textContent = state.config.mode === 'live' ? 'Wallet connected / live broker gated' : 'Wallet connected / paper mode';
+    els.walletMode.textContent = walletSessionMode === 'live' ? 'Live Wallet' : 'Paper Session';
+    els.walletMeta.textContent = walletSessionMode === 'live' ? 'Live wallet connected' : 'Paper session active';
   }
   els.emergencyButton.textContent = state.config.emergencyStop ? 'Clear Stop' : 'Emergency Stop';
   els.emergencyButton.classList.toggle('armed', Boolean(state.config.emergencyStop));
@@ -784,8 +789,9 @@ function bestToken(tokens) {
 function compareTokens(a, b) {
   const av = sortValue(a, sortKey);
   const bv = sortValue(b, sortKey);
-  if (typeof av === 'string') return av.localeCompare(bv) * sortDir;
-  return (av - bv) * sortDir;
+  let result = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+  if (result === 0 && sortKey !== 'ageMs') result = Number(a.ageMs || 0) - Number(b.ageMs || 0);
+  return result * sortDir;
 }
 
 function sortValue(t, key) {
@@ -853,11 +859,11 @@ function openExecutionModal(token, mode) {
   els.executionBody.innerHTML = `
     <div class="risk-setting">
       <label>SOL amount</label><strong>${fixed(sizeSol)} SOL</strong>
-      <input type="range" min="0.01" max="${Math.max(0.6, sizeSol * 2)}" step="0.01" value="${sizeSol}">
+      <small>Uses current backend max position setting.</small>
     </div>
     <div class="risk-setting">
       <label>Max slippage</label><strong>${pct(slippage)}</strong>
-      <input type="range" min="0.01" max="0.15" step="0.005" value="${slippage}">
+      <small>Change this in Risk settings before execution.</small>
     </div>
     <div class="execution-grid">
       <div><small>Route</small><strong>Pump.fun bonding curve</strong></div>
@@ -876,7 +882,7 @@ function openExecutionModal(token, mode) {
       <button class="action-button" data-action="cancel-execution">Cancel</button>
     </div>
     <div class="execution-steps">
-      <div class="execution-step active" id="execStep1"><small>1 / Wallet</small><strong>${walletConnected ? 'Wallet session verified' : 'Waiting for Phantom/Solflare connection'}</strong></div>
+      <div class="execution-step active" id="execStep1"><small>1 / Account</small><strong>${live ? walletSessionMode === 'live' ? 'Live wallet verified' : 'Connect a live wallet first' : 'Paper session / no wallet required'}</strong></div>
       <div class="execution-step" id="execStep2"><small>2 / Quote</small><strong>Building route and slippage envelope</strong></div>
       <div class="execution-step" id="execStep3"><small>3 / Backend</small><strong>${live ? liveStatusText() : 'Waiting for backend paper confirmation'}</strong></div>
       <div class="execution-step" id="execStep4"><small>4 / Confirmation</small><strong class="signature">--</strong></div>
@@ -922,6 +928,7 @@ function liveStatusText() {
 async function confirmPaperBuy(mint) {
   const token = selectedToken(latestState?.watchedTokens || []);
   const sizeSol = latestState.config.risk.maxPositionSizeSol;
+  if (!walletConnected || walletSessionMode !== 'paper') startPaperSession();
   markStep('execStep3', 'active');
   const result = await apiPost('/api/paper/buy', { mint, sizeSol });
   if (!result.ok) {
@@ -948,10 +955,15 @@ async function confirmLiveBuy(mint) {
     if (step) step.querySelector('strong').textContent = liveStatusText();
     return;
   }
+  if (!walletConnected || walletSessionMode !== 'live' || !walletAddress) {
+    toast('Connect a live wallet first');
+    openWalletChooser();
+    return;
+  }
   const token = selectedToken(latestState?.watchedTokens || []);
   const sizeSol = latestState.config.risk.maxPositionSizeSol;
   markStep('execStep3', 'active');
-  const result = await apiPost('/api/live/buy', { mint, sizeSol });
+  const result = await apiPost('/api/live/buy', { mint, sizeSol, walletAddress });
   if (!result.ok) {
     toast(result.error || 'Live buy blocked');
     const step = q('#execStep4');
@@ -984,7 +996,12 @@ async function liveSell(mint, pct = 1, reason = 'manual live sell') {
     toast(liveStatusText());
     return;
   }
-  const result = await apiPost('/api/live/sell', { mint, pct, reason });
+  if (!walletConnected || walletSessionMode !== 'live' || !walletAddress) {
+    toast('Connect a live wallet first');
+    openWalletChooser();
+    return;
+  }
+  const result = await apiPost('/api/live/sell', { mint, pct, reason, walletAddress });
   if (!result.ok) {
     toast(result.error || 'Live sell blocked');
     return;
@@ -1067,40 +1084,140 @@ function escapeHtml(value = '') {
 function escapeAttr(value = '') { return escapeHtml(value).replace(/`/g, '&#096;'); }
 function safeClass(value = '') { return String(value).replace(/[^a-zA-Z0-9_-]/g, ''); }
 
+function currentMode() {
+  return latestState?.config?.mode || 'paper';
+}
+
+function renderWalletPrompt(config = {}) {
+  if (walletConnected) return;
+  const mode = config.mode || 'paper';
+  els.walletButton.classList.remove('connected');
+  els.walletLabel.textContent = mode === 'live' ? 'Connect Live Wallet' : 'Start Paper';
+  els.walletMeta.textContent = mode === 'live' ? liveStatusText() : 'No wallet needed';
+  els.walletBalance.textContent = mode === 'live' ? 'wallet required' : 'paper';
+  els.walletMenuAddress.textContent = 'Not connected';
+  els.walletMode.textContent = mode === 'live' ? 'Live Mode' : 'Paper Mode';
+}
+
+function resetWalletSession() {
+  walletConnected = false;
+  walletAddress = '';
+  walletSessionMode = '';
+  els.walletButton.classList.remove('connected');
+  els.walletMenu.classList.add('hidden');
+  els.walletConnectModal.classList.add('hidden');
+  els.walletMenuAddress.textContent = 'Not connected';
+  els.walletMenuSol.textContent = '--';
+  els.walletMenuEquity.textContent = '--';
+  els.walletMenuHoldings.textContent = '0';
+  els.walletMenuSwaps.textContent = '0';
+  renderWalletPrompt(latestState?.config || {});
+}
+
+function startPaperSession() {
+  walletConnected = true;
+  walletAddress = '';
+  walletSessionMode = 'paper';
+  els.walletButton.classList.add('connected');
+  els.walletLabel.textContent = 'Paper Session';
+  els.walletMeta.textContent = 'Paper session active';
+  els.walletBalance.textContent = 'paper';
+  els.walletMenuAddress.textContent = 'Paper session / no wallet';
+  els.walletMode.textContent = 'Paper Session';
+  els.walletMenuSol.textContent = 'Paper only';
+  addWalletActivity('Paper session started', 'No wallet popup and no real funds at risk');
+  toast('Paper session started');
+}
+
+function solanaWalletProviders() {
+  const providers = [];
+  const seen = new Set();
+  const add = (id, name, provider, detected) => {
+    if (!provider || seen.has(id)) return;
+    seen.add(id);
+    providers.push({ id, name, provider, detected: Boolean(detected) });
+  };
+  add('phantom', 'Phantom', window.phantom?.solana, Boolean(window.phantom?.solana?.isPhantom));
+  add('solflare', 'Solflare', window.solflare, Boolean(window.solflare?.isSolflare));
+  add('safepal', 'SafePal', window.safepal?.solana || (window.solana?.isSafePal ? window.solana : null), Boolean(window.safepal?.solana || window.solana?.isSafePal));
+  add('backpack', 'Backpack', window.backpack?.solana || (window.solana?.isBackpack ? window.solana : null), Boolean(window.backpack?.solana || window.solana?.isBackpack));
+  if (window.solana && !providers.some((item) => item.provider === window.solana)) {
+    const name = window.solana.isPhantom ? 'Phantom' : window.solana.isSolflare ? 'Solflare' : window.solana.isSafePal ? 'SafePal' : 'Injected Solana Wallet';
+    add('injected', name, window.solana, true);
+  }
+  return providers.filter((item) => item.provider?.connect);
+}
+
+function renderWalletProviderList() {
+  const providers = solanaWalletProviders();
+  els.walletProviderList.innerHTML = '';
+  if (!providers.length) {
+    const empty = document.createElement('div');
+    empty.className = 'wallet-provider-empty';
+    empty.textContent = 'No Solana wallet detected in this browser. Install Phantom/Solflare/SafePal or open this page inside a mobile wallet browser.';
+    els.walletProviderList.append(empty);
+    return;
+  }
+  for (const item of providers) {
+    const button = document.createElement('button');
+    button.className = 'wallet-provider';
+    button.dataset.walletProvider = item.id;
+    const strong = document.createElement('strong');
+    strong.textContent = item.name;
+    const small = document.createElement('small');
+    small.textContent = item.detected ? 'Detected in this browser' : 'Available provider';
+    button.append(strong, small);
+    els.walletProviderList.append(button);
+  }
+}
+
+function openWalletChooser() {
+  renderWalletProviderList();
+  els.walletConnectModal.classList.remove('hidden');
+}
+
+function walletProviderById(id) {
+  return solanaWalletProviders().find((item) => item.id === id);
+}
+
+async function connectLiveWallet(providerInfo) {
+  if (!providerInfo?.provider?.connect) return toast('Wallet provider unavailable');
+  try {
+    els.walletConnectModal.classList.add('hidden');
+    toast(`Opening ${providerInfo.name}`);
+    els.walletMeta.textContent = `Awaiting ${providerInfo.name} approval...`;
+    const response = await providerInfo.provider.connect();
+    walletAddress = String(response.publicKey || providerInfo.provider.publicKey || '');
+    if (!walletAddress) throw new Error('wallet address unavailable');
+    walletConnected = true;
+    walletSessionMode = 'live';
+    els.walletButton.classList.add('connected');
+    els.walletLabel.textContent = short(walletAddress);
+    els.walletMeta.textContent = `${providerInfo.name} connected`;
+    els.walletBalance.textContent = 'balance not loaded';
+    els.walletMenuAddress.textContent = walletAddress;
+    els.walletMode.textContent = 'Live Wallet';
+    els.walletMenuSol.textContent = 'Not loaded';
+    addWalletActivity(`${providerInfo.name} connected`, short(walletAddress));
+    toast('Live wallet connected');
+  } catch (error) {
+    els.walletMeta.textContent = 'Wallet connection rejected';
+    toast(error.message || 'Wallet connection failed');
+  }
+}
+
 els.walletButton.addEventListener('click', async () => {
   if (walletConnected) {
     els.walletMenu.classList.toggle('hidden');
     return;
   }
-  const provider = window.solana || window.phantom?.solana;
-  if (!provider?.connect) {
-    toast('No Solana wallet detected. Install Phantom or Solflare to connect.');
-    els.walletMeta.textContent = 'Wallet not detected';
-    return;
-  }
-  try {
-    toast('Opening wallet approval');
-    els.walletMeta.textContent = 'Awaiting wallet approval...';
-    const response = await provider.connect();
-    walletAddress = String(response.publicKey || provider.publicKey || '');
-    if (!walletAddress) throw new Error('wallet address unavailable');
-    walletConnected = true;
-    els.walletButton.classList.add('connected');
-    els.walletLabel.textContent = short(walletAddress);
-    els.walletMeta.textContent = latestState?.config?.mode === 'live' ? 'Wallet connected / live broker gated' : 'Wallet connected / paper mode';
-    els.walletBalance.textContent = 'balance not loaded';
-    els.walletMenuAddress.textContent = walletAddress;
-    els.walletMode.textContent = latestState?.config?.mode === 'live' ? 'Live Mode' : 'Paper Mode';
-    addWalletActivity('Wallet connected', `${short(walletAddress)} / ${els.walletMode.textContent}`);
-    toast('Wallet connected');
-  } catch (error) {
-    els.walletMeta.textContent = 'Wallet connection rejected';
-    toast(error.message || 'Wallet connection failed');
-  }
+  if (currentMode() === 'paper') return startPaperSession();
+  openWalletChooser();
 });
 
 els.copyWallet.addEventListener('click', (event) => {
   event.stopPropagation();
+  if (!walletAddress) return toast('No live wallet address to copy');
   copyText(walletAddress, 'Wallet copied');
 });
 
@@ -1111,13 +1228,18 @@ els.openWalletSolscan.addEventListener('click', (event) => {
 });
 
 els.disconnectWallet.addEventListener('click', () => {
-  walletConnected = false;
-  walletAddress = '';
-  els.walletButton.classList.remove('connected');
-  els.walletLabel.textContent = 'Connect Wallet';
-  els.walletMeta.textContent = 'Paper mode active';
-  els.walletBalance.textContent = '--';
-  els.walletMenu.classList.add('hidden');
+  addWalletActivity(walletSessionMode === 'live' ? 'Wallet disconnected' : 'Paper session ended', walletSessionMode || 'session');
+  resetWalletSession();
+});
+
+els.closeWalletConnect.addEventListener('click', () => els.walletConnectModal.classList.add('hidden'));
+els.walletConnectModal.addEventListener('click', (event) => {
+  if (event.target === els.walletConnectModal) els.walletConnectModal.classList.add('hidden');
+});
+els.walletProviderList.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-wallet-provider]');
+  if (!button) return;
+  connectLiveWallet(walletProviderById(button.dataset.walletProvider));
 });
 
 els.emergencyButton.addEventListener('click', async () => {
@@ -1136,7 +1258,7 @@ document.querySelectorAll('.scanner-table th[data-sort]').forEach((th) => {
     if (sortKey === key) sortDir *= -1;
     else {
       sortKey = key;
-      sortDir = key === 'symbol' || key === 'status' ? 1 : -1;
+      sortDir = key === 'symbol' || key === 'status' || key === 'ageMs' ? 1 : -1;
     }
     latestState && renderScanner(latestState.watchedTokens || []);
   });
@@ -1196,6 +1318,7 @@ document.addEventListener('pointerdown', (event) => {
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     els.walletMenu.classList.add('hidden');
+    els.walletConnectModal.classList.add('hidden');
     els.executionModal.classList.add('hidden');
   }
 });
@@ -1227,7 +1350,12 @@ els.modeSwitch.addEventListener('click', async (event) => {
   const mode = button.dataset.modeOption;
   const result = await apiPost('/api/mode', { mode });
   if (!result.ok) return toast(result.error || 'Mode switch failed');
-  toast(mode === 'live' ? liveStatusText() : 'Paper mode active');
+  resetWalletSession();
+  if (mode === 'live') {
+    toast(result.live?.dryRun ? 'Live dry-run mode active' : 'Live mode active');
+  } else {
+    toast('Paper mode active');
+  }
   await refresh();
 });
 
