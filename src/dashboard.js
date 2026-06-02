@@ -20,6 +20,10 @@ export function startDashboard({ config, engine, events }) {
       sendJson(res, readJsonl(config.historyPath, 200));
       return;
     }
+    if (req.method === 'GET' && url.pathname === '/api/trades') {
+      sendJson(res, engine.dashboardState().portfolio.tradeHistory || []);
+      return;
+    }
     if (req.method === 'POST' && url.pathname === '/api/paper/buy') {
       await handleJsonAction(req, res, (body) => engine.paperBuy(String(body.mint || ''), body));
       return;

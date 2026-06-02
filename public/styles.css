@@ -382,6 +382,34 @@ p, small, label { color: var(--muted); }
   gap: 10px;
   margin-top: 10px;
 }
+.history-panel {
+  grid-column: 1 / -1;
+}
+.trade-history {
+  display: grid;
+  gap: 8px;
+}
+.history-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.25fr) repeat(5, minmax(110px, 0.65fr));
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.025);
+  padding: 9px;
+}
+.history-row small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+.history-row strong {
+  display: block;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
 .bottom-grid {
   display: grid;
   grid-template-columns: 0.7fr 1fr 0.78fr;
@@ -1179,6 +1207,7 @@ p, small, label { color: var(--muted); }
   .scanner-tools { flex-direction: column; align-items: stretch; }
   .scanner-panel { overflow-x: auto; }
   .position-metrics, .zones, .breakdown, .risk-impact { grid-template-columns: 1fr; }
+  .history-row { grid-template-columns: 1fr 1fr; }
   .intel-grid, .alpha-queue { grid-template-columns: 1fr; }
 }
 

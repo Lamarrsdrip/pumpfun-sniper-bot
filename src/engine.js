@@ -32,11 +32,12 @@ export class SniperEngine {
         token.status = 'EXITED';
         token.statusReason = event.reason;
       }
+      const accountPnlSol = Number.isFinite(event.netPnlSol) ? event.netPnlSol : event.pnlSol;
       this.stats.closed += 1;
-      this.stats.totalPnlSol += event.pnlSol;
-      if (event.pnlSol >= 0) this.stats.wins += 1;
+      this.stats.totalPnlSol += accountPnlSol;
+      if (accountPnlSol >= 0) this.stats.wins += 1;
       else this.stats.losses += 1;
-      this.risk.observeClosedTrade(event.pnlSol, event.at);
+      this.risk.observeClosedTrade(accountPnlSol, event.at);
       this.portfolio?.recordTradeClose(event, this.broker.equitySol);
     });
     events.on('trade:add', (event) => this.portfolio?.alert({
@@ -319,10 +320,14 @@ export class SniperEngine {
   updateRiskSettings(settings = {}) {
     const risk = this.config.risk;
     const management = this.config.management;
-    assignNumber(risk, settings, 'maxRiskPerTradeSol', 0.001, 5);
-    assignNumber(risk, settings, 'maxPositionSizeSol', 0.001, 50);
+    assignNumber(risk, settings, 'maxRiskPerTradeSol', 0.001, 100);
+    assignNumber(risk, settings, 'maxRiskPerTradePct', 0.0001, 0.1);
+    assignNumber(risk, settings, 'maxPositionSizeSol', 0.001, 500);
+    assignNumber(risk, settings, 'maxPositionSizePct', 0.001, 0.5);
     assignNumber(risk, settings, 'maxSlippagePct', 0.001, 0.5);
-    assignNumber(risk, settings, 'maxDailyLossSol', 0.001, 100);
+    assignNumber(risk, settings, 'maxDailyLossSol', 0.001, 500);
+    assignNumber(risk, settings, 'maxDailyLossPct', 0.001, 0.5);
+    assignNumber(risk, settings, 'emergencyStopDrawdownPct', 0.001, 0.6);
     assignNumber(risk, settings, 'maxOpenTrades', 1, 20, true);
     assignNumber(management, settings, 'hardStopLossPct', 0.01, 0.9);
     assignNumber(management, settings, 'trailingStartPct', 0.01, 5);
@@ -373,6 +378,7 @@ export class SniperEngine {
 
   status() {
     const sourceHealth = this.sourceHealth || {};
+    const effectiveRisk = this.risk.effectiveLimits(this.broker.equitySol);
     return {
       ok: true,
       app: {
@@ -409,7 +415,8 @@ export class SniperEngine {
         cashSol: this.broker.cashSol,
         equitySol: this.broker.equitySol,
         openValueSol: this.broker.openValueSol,
-        feesSol: this.broker.feesSol
+        feesSol: this.broker.feesSol,
+        effectiveRisk
       },
       liveTrading: {
         enabled: Boolean(this.config.live?.enabled),
@@ -424,6 +431,7 @@ export class SniperEngine {
 
   dashboardState() {
     const closed = this.stats.wins + this.stats.losses;
+    const effectiveRisk = this.risk.effectiveLimits(this.broker.equitySol);
     return {
       stats: {
         ...this.stats,
@@ -450,6 +458,7 @@ export class SniperEngine {
           tradeApiConfigured: Boolean(this.config.live?.tradeApiUrl && this.config.live?.tradeApiKey)
         },
         risk: this.config.risk,
+        effectiveRisk,
         management: this.config.management
       },
       sourceHealth: this.sourceHealth || {},
@@ -458,11 +467,12 @@ export class SniperEngine {
         positions: [...this.tradeManager.positions.values()],
         sourceHealth: this.sourceHealth || {},
         threshold: this.config.strictScoreThreshold,
-        risk: this.config.risk
+        risk: effectiveRisk
       }),
       portfolio: {
         ...(this.portfolio?.stats() || {}),
         equityCurve: this.portfolio?.equityCurve || [],
+        tradeHistory: this.portfolio?.tradeHistory() || [],
         alerts: this.portfolio?.alerts || []
       },
       learning: {

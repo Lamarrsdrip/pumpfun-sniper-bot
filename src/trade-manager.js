@@ -27,6 +27,10 @@ export class Position {
     this.entryType = entryType;
     this.addedAfterScout = false;
     this.walletAddress = walletAddress;
+    this.entryFeesSol = 0;
+    this.entryFeesAllocatedSol = 0;
+    this.exitFeesSol = 0;
+    this.netRealizedPnlSol = 0;
   }
 }
 
@@ -52,6 +56,7 @@ export class TradeManager {
       walletAddress: context.walletAddress || ''
     });
     const execution = await this.broker.buy(position, { maxSlippagePct: this.config.risk.maxSlippagePct, walletAddress: context.walletAddress || '' });
+    position.entryFeesSol += executionCost(execution);
     this.positions.set(position.mint, position);
     this.broker.markToMarket([...this.positions.values()]);
     this.events.emit('trade:open', { type: 'trade:open', at, position, execution, snapshot });
@@ -73,6 +78,7 @@ export class TradeManager {
     const walletAddress = context.walletAddress || position.walletAddress || '';
     const addLeg = { ...position, sizeSol: addSizeSol, walletAddress };
     const execution = await this.broker.buy(addLeg, { maxSlippagePct: this.config.risk.maxSlippagePct, walletAddress });
+    position.entryFeesSol += executionCost(execution);
     this.broker.markToMarket([...this.positions.values()]);
     this.events.emit('trade:add', { type: 'trade:add', at, position, addSizeSol, execution, snapshot, reasons });
     return position;
@@ -124,14 +130,19 @@ export class TradeManager {
     const pnlSol = position.sizeSol * pct * pctChange(position.entryPrice, snapshot.price);
     position.realizedPnlSol += pnlSol;
     position.remainingPct -= pct;
+    const entryFeeShare = allocateEntryFee(position, pct);
     const execution = await this.broker.sell(position, pct, {
       reason,
       maxSlippagePct: this.config.risk.maxSlippagePct,
       walletAddress: context.walletAddress || position.walletAddress || '',
       exitValueSol: position.sizeSol * pct + pnlSol
     });
+    const exitCost = executionCost(execution);
+    position.exitFeesSol += exitCost;
+    const netPnlSol = pnlSol - entryFeeShare - exitCost;
+    position.netRealizedPnlSol += netPnlSol;
     this.broker.markToMarket([...this.positions.values()]);
-    this.events.emit('trade:partialExit', { type: 'trade:partialExit', at, mint: position.mint, pct, pnlSol, reason, execution });
+    this.events.emit('trade:partialExit', { type: 'trade:partialExit', at, mint: position.mint, name: position.name, symbol: position.symbol, pct, pnlSol, netPnlSol, entryFeeShareSol: entryFeeShare, exitFeesSol: exitCost, reason, execution });
     if (position.remainingPct <= 0.001) await this.close(position, snapshot, 'fully scaled out', at);
   }
 
@@ -140,6 +151,7 @@ export class TradeManager {
     const remaining = position.remainingPct;
     const pnlSol = position.sizeSol * remaining * pctChange(position.entryPrice, snapshot.price);
     position.realizedPnlSol += pnlSol;
+    const entryFeeShare = allocateEntryFee(position, remaining, true);
     position.remainingPct = 0;
     position.closed = true;
     position.exitScore = score?.score ?? null;
@@ -149,6 +161,10 @@ export class TradeManager {
       walletAddress: context.walletAddress || position.walletAddress || '',
       exitValueSol: position.sizeSol * remaining + pnlSol
     });
+    const exitCost = executionCost(execution);
+    position.exitFeesSol += exitCost;
+    const netPnlSol = pnlSol - entryFeeShare - exitCost;
+    position.netRealizedPnlSol += netPnlSol;
     this.positions.delete(position.mint);
     this.broker.markToMarket([...this.positions.values()]);
     this.events.emit('trade:close', {
@@ -158,6 +174,14 @@ export class TradeManager {
       entryPrice: position.entryPrice,
       exitPrice: snapshot.price,
       pnlSol: position.realizedPnlSol,
+      netPnlSol: position.netRealizedPnlSol,
+      feesSol: position.entryFeesSol + position.exitFeesSol,
+      entryFeesSol: position.entryFeesSol,
+      exitFeesSol: position.exitFeesSol,
+      sizeSol: position.sizeSol,
+      remainingClosedPct: remaining,
+      name: position.name,
+      symbol: position.symbol,
       maxDrawdownPct: position.maxDrawdownPct,
       entryScore: position.entryScore,
       exitScore: position.exitScore,
@@ -165,6 +189,17 @@ export class TradeManager {
       reason
     });
   }
+}
+
+function executionCost(execution = {}) {
+  return Number(execution.feeSol || 0) + Number(execution.slippageSol || 0);
+}
+
+function allocateEntryFee(position, pct, allRemaining = false) {
+  const remainingFees = Math.max(0, Number(position.entryFeesSol || 0) - Number(position.entryFeesAllocatedSol || 0));
+  const share = allRemaining ? remainingFees : Math.min(remainingFees, Number(position.entryFeesSol || 0) * Number(pct || 0));
+  position.entryFeesAllocatedSol += share;
+  return share;
 }
 
 function emergencyExitReason(snapshot, change, config) {

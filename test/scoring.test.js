@@ -38,11 +38,27 @@ test('blocks obvious dev sell and concentration risk', () => {
 
 test('risk manager enforces daily loss and cooldown', () => {
   const risk = new RiskManager(config);
-  risk.observeClosedTrade(-config.risk.maxDailyLossSol, 1000);
-  const reasons = risk.canOpen({ openPositions: 0, equitySol: config.paperStartingSol, at: 1001 });
+  const limit = risk.effectiveLimits(config.paperStartingSol).maxDailyLossSol;
+  assert.ok(limit >= config.paperStartingSol * 0.19);
+  risk.observeClosedTrade(-limit, Date.UTC(2026, 0, 1));
+  const reasons = risk.canOpen({ openPositions: 0, equitySol: config.paperStartingSol, at: Date.UTC(2026, 0, 1) + 1000 });
 
   assert.ok(reasons.includes('max daily loss reached'));
   assert.ok(reasons.includes('cooldown after loss is active'));
+  const nextDayReasons = risk.canOpen({ openPositions: 0, equitySol: config.paperStartingSol, at: Date.UTC(2026, 0, 2) });
+  assert.ok(!nextDayReasons.includes('max daily loss reached'));
+});
+
+test('risk sizing scales from account balance and profile', () => {
+  const risk = new RiskManager(config);
+  const small = risk.effectiveLimits(10);
+  const whale = risk.effectiveLimits(1000);
+  assert.equal(small.accountType, 'small');
+  assert.equal(whale.accountType, 'whale');
+  assert.ok(small.maxPositionSizeSol >= 0.7 && small.maxPositionSizeSol <= 0.8);
+  assert.ok(small.maxDailyLossSol >= 1.9 && small.maxDailyLossSol <= 2.1);
+  assert.ok(whale.maxPositionSizeSol > small.maxPositionSizeSol);
+  assert.ok(whale.maxRiskPerTradePct < small.maxRiskPerTradePct);
 });
 
 test('paper broker buy/sell/equity includes open market value and fees', async () => {
@@ -119,6 +135,18 @@ test('take profit partials reduce remaining position', async () => {
   assert.ok(position.remainingPct < 1);
 });
 
+test('closed trade history uses net PnL after fees and slippage', async () => {
+  const { tradeManager, events, broker } = testTradeManager();
+  const portfolio = new PortfolioManager(10);
+  events.on('trade:close', (event) => portfolio.recordTradeClose(event, broker.equitySol));
+  const position = await openTestPosition(tradeManager);
+  await tradeManager.close(position, { mint: position.mint, price: 1.2, drawdownFromHighPct: 0 }, 'test close', 2000, { score: 80 });
+  const [trade] = portfolio.tradeHistory();
+  assert.ok(trade.grossPnlSol > 0);
+  assert.ok(trade.feesSol > 0);
+  assert.ok(trade.netPnlSol < trade.grossPnlSol);
+});
+
 test('fake volume and dev sell blocks trigger', () => {
   const token = healthyToken();
   for (let i = 0; i < 18; i += 1) {
@@ -160,6 +188,8 @@ test('dashboard state API shape', () => {
   assert.ok('openPositions' in state);
   assert.ok('learning' in state);
   assert.ok('sourceHealth' in state);
+  assert.ok('effectiveRisk' in state.config);
+  assert.ok('tradeHistory' in state.portfolio);
 });
 
 test('dashboard watched tokens are newest first', () => {

@@ -41,16 +41,30 @@
     "volumeSpikeMin": 2.2
   },
   "risk": {
-    "maxRiskPerTradeSol": 0.05,
-    "maxPositionSizeSol": 0.22,
+    "accountType": "auto",
+    "minRiskPerTradeSol": 0.01,
+    "maxRiskPerTradeSol": 10,
+    "maxRiskPerTradePct": 0.015,
+    "minPositionSizeSol": 0.02,
+    "maxPositionSizeSol": 50,
+    "maxPositionSizePct": 0.075,
     "maxSlippagePct": 0.08,
-    "maxDailyLossSol": 0.35,
+    "minDailyLossSol": 0.15,
+    "maxDailyLossSol": 25,
+    "maxDailyLossPct": 0.2,
     "maxOpenTrades": 2,
     "cooldownAfterLossMs": 600000,
-    "emergencyStopDrawdownSol": 0.6,
+    "minEmergencyDrawdownSol": 0.3,
+    "emergencyStopDrawdownSol": 35,
+    "emergencyStopDrawdownPct": 0.12,
     "stopAfterConsecutiveLosses": 3,
     "abnormalSellPressureRatio": 1.45,
-    "volumeCollapsePct": 0.62
+    "volumeCollapsePct": 0.62,
+    "accountProfiles": {
+      "small": { "maxEquitySol": 25, "maxRiskPerTradePct": 0.015, "maxPositionSizePct": 0.075, "maxDailyLossPct": 0.2, "emergencyStopDrawdownPct": 0.22, "maxOpenTrades": 2 },
+      "growth": { "maxEquitySol": 200, "maxRiskPerTradePct": 0.012, "maxPositionSizePct": 0.06, "maxDailyLossPct": 0.16, "emergencyStopDrawdownPct": 0.18, "maxOpenTrades": 3 },
+      "whale": { "maxEquitySol": null, "maxRiskPerTradePct": 0.008, "maxPositionSizePct": 0.04, "maxDailyLossPct": 0.12, "emergencyStopDrawdownPct": 0.14, "maxOpenTrades": 4 }
+    }
   },
   "management": {
     "hardStopLossPct": 0.18,

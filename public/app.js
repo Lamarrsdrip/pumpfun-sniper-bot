@@ -41,6 +41,8 @@ const els = {
   tokenDetail: q('#tokenDetail'),
   positionCount: q('#positionCount'),
   positions: q('#positions'),
+  tradeHistory: q('#tradeHistory'),
+  historyCount: q('#historyCount'),
   pnlChart: q('#pnlChart'),
   dailyPnl: q('#dailyPnl'),
   maxDrawdown: q('#maxDrawdown'),
@@ -104,10 +106,10 @@ let lastTokenScores = new Map();
 const eventMemory = [];
 
 const presetProfiles = {
-  safe: { risk: 0.5, threshold: 88, freq: 'Fewer trades', drawdown: 'Lower risk', label: 'Safe: fewer trades, lower risk' },
-  balanced: { risk: 1, threshold: 80, freq: 'Normal', drawdown: 'Controlled', label: 'Balanced: normal' },
-  sniper: { risk: 1.2, threshold: 76, freq: 'Faster entries', drawdown: 'Higher monitoring needed', label: 'Sniper: faster entries' },
-  aggressive: { risk: 1.55, threshold: 70, freq: 'More trades', drawdown: 'Research only', label: 'Aggressive: research only' }
+  safe: { threshold: 88, maxRiskPerTradePct: 0.01, maxPositionSizePct: 0.05, maxDailyLossPct: 0.12, emergencyStopDrawdownPct: 0.15, freq: 'Fewer trades', drawdown: 'Lower risk', label: 'Safe: 5% entries' },
+  balanced: { threshold: 80, maxRiskPerTradePct: 0.015, maxPositionSizePct: 0.075, maxDailyLossPct: 0.2, emergencyStopDrawdownPct: 0.22, freq: 'Normal', drawdown: '20% daily room', label: 'Balanced: 7.5% entries' },
+  sniper: { threshold: 76, maxRiskPerTradePct: 0.02, maxPositionSizePct: 0.1, maxDailyLossPct: 0.22, emergencyStopDrawdownPct: 0.25, freq: 'Faster entries', drawdown: 'More breathing room', label: 'Sniper: 10% entries' },
+  aggressive: { threshold: 70, maxRiskPerTradePct: 0.025, maxPositionSizePct: 0.12, maxDailyLossPct: 0.25, emergencyStopDrawdownPct: 0.28, freq: 'More trades', drawdown: 'Research only', label: 'Aggressive: research only' }
 };
 
 async function refresh() {
@@ -128,7 +130,8 @@ function renderState(state) {
   const unrealized = Number(state.unrealizedPnlSol || positions.reduce((total, p) => total + Number(p.unrealizedPnlSol || 0), 0));
   const deployed = positions.reduce((total, p) => total + Number(p.sizeSol || 0) * Number(p.remainingPct || 0), 0);
   const equity = Number(state.equitySol || 0);
-  const maxRisk = Number(state.config.risk.maxPositionSizeSol || 0) * Number(state.config.risk.maxOpenTrades || 1);
+  const effectiveRisk = state.config.effectiveRisk || state.config.risk || {};
+  const maxRisk = Number(effectiveRisk.maxPositionSizeSol || 0) * Number(effectiveRisk.maxOpenTrades || state.config.risk.maxOpenTrades || 1);
   if ((state.watchedTokens || []).length && els.networkLabel.textContent === 'SYNCING') {
     setFeed(state.config.dataMode === 'mock' ? 'mock-live' : 'connected');
   }
@@ -176,6 +179,7 @@ function renderState(state) {
   renderLearning(state.learning || {});
   renderScanner(state.watchedTokens || []);
   renderPositions(positions);
+  renderTradeHistory(state.portfolio?.tradeHistory || []);
   renderTokenDetail(selectedToken(state.watchedTokens || []) || bestToken(state.watchedTokens || []));
   renderRiskConsole(state.config);
   renderAlerts(state.portfolio?.alerts || []);
@@ -501,6 +505,32 @@ function renderPositions(positions) {
   }).join('');
 }
 
+function renderTradeHistory(trades) {
+  if (!els.tradeHistory || !els.historyCount) return;
+  els.historyCount.textContent = `${trades.length} closed trades`;
+  if (!trades.length) {
+    els.tradeHistory.innerHTML = '<div class="empty-state">No closed trades yet. Closed paper/live trades will appear here with net PnL after fees and slippage.</div>';
+    return;
+  }
+  els.tradeHistory.innerHTML = trades.slice(0, 40).map((trade) => {
+    const net = Number(trade.netPnlSol || 0);
+    const gross = Number(trade.grossPnlSol || 0);
+    const fees = Number(trade.feesSol || 0);
+    const opened = new Date(trade.at || Date.now()).toLocaleTimeString();
+    return `<article class="history-row">
+      <div>
+        <strong>${tokenName(trade)}</strong>
+        <small>${short(trade.mint)} / ${opened} / ${escapeHtml(trade.reason || 'closed')}</small>
+      </div>
+      <div><small>Size</small><strong>${fixed(trade.sizeSol)} SOL</strong></div>
+      <div><small>Entry to Exit</small><strong>${fixed(trade.entryPrice)} to ${fixed(trade.exitPrice)}</strong></div>
+      <div><small>Gross</small><strong class="${gross >= 0 ? 'green' : 'red'}">${signed(gross)}</strong></div>
+      <div><small>Fees + Slip</small><strong class="yellow">-${fixed(fees)}</strong></div>
+      <div><small>Net Account PnL</small><strong class="${net >= 0 ? 'green' : 'red'}">${signed(net)}</strong></div>
+    </article>`;
+  }).join('');
+}
+
 function renderTokenTxFeed(token) {
   const trades = token.recentTrades || [];
   const rows = trades.slice(-10).reverse().map((trade) => `
@@ -516,12 +546,15 @@ function renderTokenTxFeed(token) {
 function renderRiskConsole(config) {
   const profile = presetProfiles[riskPreset];
   const risk = config.risk;
+  const effective = config.effectiveRisk || risk;
   const display = [
     ['Score threshold', config.strictScoreThreshold, profile.threshold, 'points'],
-    ['Max risk / trade', risk.maxRiskPerTradeSol, risk.maxRiskPerTradeSol * profile.risk, 'SOL'],
-    ['Max position', risk.maxPositionSizeSol, risk.maxPositionSizeSol * profile.risk, 'SOL'],
-    ['Slippage cap', risk.maxSlippagePct, Math.min(0.15, risk.maxSlippagePct * profile.risk), '%'],
-    ['Daily loss stop', risk.maxDailyLossSol, risk.maxDailyLossSol * profile.risk, 'SOL']
+    ['Account type', effective.accountType || 'auto', effective.accountType || 'auto', 'text'],
+    ['Max risk / trade', effective.maxRiskPerTradeSol, effective.equitySol * profile.maxRiskPerTradePct, 'SOL'],
+    ['Max position', effective.maxPositionSizeSol, effective.equitySol * profile.maxPositionSizePct, 'SOL'],
+    ['Daily loss stop', effective.maxDailyLossSol, effective.equitySol * profile.maxDailyLossPct, 'SOL'],
+    ['Daily loss left', effective.dailyLossRemainingSol, effective.dailyLossRemainingSol, 'SOL'],
+    ['Slippage cap', risk.maxSlippagePct, risk.maxSlippagePct, '%']
   ];
   els.settings.innerHTML = display.map(([label, current, next, unit]) => `
     <div class="risk-setting">
@@ -535,6 +568,7 @@ function renderRiskConsole(config) {
 }
 
 function formatRiskValue(value, unit) {
+  if (unit === 'text') return escapeHtml(value);
   if (unit === '%') return pct(value);
   if (unit === 'points') return Math.round(value);
   return `${fixed(value)} ${unit}`;
@@ -546,10 +580,11 @@ async function applyRiskPreset(name) {
   const risk = latestState.config.risk;
   const settings = {
     strictScoreThreshold: profile.threshold,
-    maxRiskPerTradeSol: risk.maxRiskPerTradeSol * profile.risk,
-    maxPositionSizeSol: risk.maxPositionSizeSol * profile.risk,
-    maxSlippagePct: Math.min(0.15, risk.maxSlippagePct * profile.risk),
-    maxDailyLossSol: risk.maxDailyLossSol * profile.risk
+    maxRiskPerTradePct: profile.maxRiskPerTradePct,
+    maxPositionSizePct: profile.maxPositionSizePct,
+    maxDailyLossPct: profile.maxDailyLossPct,
+    emergencyStopDrawdownPct: profile.emergencyStopDrawdownPct,
+    maxSlippagePct: risk.maxSlippagePct
   };
   const result = await apiPost('/api/risk/settings', settings);
   if (!result.ok) {
@@ -850,7 +885,7 @@ function openUrl(url) {
 function openExecutionModal(token, mode) {
   if (!token) return;
   const live = mode === 'live';
-  const sizeSol = latestState.config.risk.maxPositionSizeSol;
+  const sizeSol = latestState.config.effectiveRisk?.maxPositionSizeSol || latestState.config.risk.maxPositionSizeSol;
   const slippage = latestState.config.risk.maxSlippagePct;
   const expectedTokens = token.price ? sizeSol / token.price : 0;
   const liveReady = isLiveReady();
@@ -927,7 +962,7 @@ function liveStatusText() {
 
 async function confirmPaperBuy(mint) {
   const token = selectedToken(latestState?.watchedTokens || []);
-  const sizeSol = latestState.config.risk.maxPositionSizeSol;
+  const sizeSol = latestState.config.effectiveRisk?.maxPositionSizeSol || latestState.config.risk.maxPositionSizeSol;
   if (!walletConnected || walletSessionMode !== 'paper') startPaperSession();
   markStep('execStep3', 'active');
   const result = await apiPost('/api/paper/buy', { mint, sizeSol });
@@ -961,7 +996,7 @@ async function confirmLiveBuy(mint) {
     return;
   }
   const token = selectedToken(latestState?.watchedTokens || []);
-  const sizeSol = latestState.config.risk.maxPositionSizeSol;
+  const sizeSol = latestState.config.effectiveRisk?.maxPositionSizeSol || latestState.config.risk.maxPositionSizeSol;
   markStep('execStep3', 'active');
   const result = await apiPost('/api/live/buy', { mint, sizeSol, walletAddress });
   if (!result.ok) {
@@ -1058,7 +1093,21 @@ function signedPct(n) { const value = Number(n || 0); return `${value >= 0 ? '+'
 function ratio(n) { return Number(n || 0) > 50 ? '50+' : Number(n || 0).toFixed(1); }
 function age(ms) { return `${Math.max(0, Math.round(Number(ms || 0) / 1000))}s`; }
 function short(value = '') { return value ? `${String(value).slice(0, 5)}...${String(value).slice(-4)}` : '--'; }
-function tokenName(t) { return escapeHtml(t.symbol || t.name || short(t.mint)); }
+function tokenName(t) {
+  const symbol = cleanDisplayName(t.symbol);
+  const name = cleanDisplayName(t.name);
+  return escapeHtml(symbol || name || 'Unnamed launch');
+}
+function cleanDisplayName(value = '') {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (looksLikeMint(text)) return '';
+  return text.slice(0, 42);
+}
+function looksLikeMint(value = '') {
+  const text = String(value || '').replace(/\s+/g, '');
+  return text.length >= 32 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(text);
+}
 function tokenIcon(t) {
   const src = safeImageUrl(t.icon);
   if (src) return `<img src="${escapeAttr(src)}" alt="" style="width:18px;height:18px;border-radius:50%;vertical-align:-4px;margin-right:6px;">`;

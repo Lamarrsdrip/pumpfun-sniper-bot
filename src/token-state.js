@@ -3,8 +3,8 @@ import { safeRatio, sum } from './math.js';
 export class TokenState {
   constructor(token) {
     this.mint = token.mint || token.ca || token.token || token.address;
-    this.name = token.name || '';
-    this.symbol = token.symbol || '';
+    this.name = cleanTokenText(token.name, '');
+    this.symbol = cleanTokenText(token.symbol, '');
     this.uri = token.uri || token.metadataUri || '';
     this.icon = token.icon || '';
     this.source = token.source || 'unknown';
@@ -97,6 +97,10 @@ export class TokenState {
     const buys = Number(raw.buys || 0);
     const sells = Number(raw.sells || 0);
     const holders = Number(raw.holders || raw.holderCount || 0);
+    const name = cleanTokenText(raw.name, this.name);
+    const symbol = cleanTokenText(raw.symbol, this.symbol);
+    if (name) this.name = name;
+    if (symbol) this.symbol = symbol;
 
     if (price > 0) {
       this.lastPrice = price;
@@ -216,6 +220,18 @@ export class TokenState {
   recentTrades(windowMs, at = Date.now()) {
     return this.trades.filter((trade) => trade.timestamp >= at - windowMs);
   }
+}
+
+function cleanTokenText(value, fallback = '') {
+  const text = String(value || '').trim();
+  if (!text) return fallback;
+  if (looksLikeMint(text)) return fallback;
+  return text.slice(0, 64);
+}
+
+function looksLikeMint(text) {
+  const compact = text.replace(/\s+/g, '');
+  return compact.length >= 32 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(compact);
 }
 
 function buildCandles(history, bucketMs) {
