@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { TokenState } from '../src/token-state.js';
 import { blockReasons, scoreToken } from '../src/scoring.js';
 import { RiskManager } from '../src/risk.js';
@@ -10,6 +12,7 @@ import { TradeManager } from '../src/trade-manager.js';
 import { BotEvents } from '../src/events.js';
 import { SniperEngine } from '../src/engine.js';
 import { PortfolioManager } from '../src/portfolio-manager.js';
+import { mergedTradeHistory } from '../src/dashboard.js';
 
 const config = JSON.parse(readFileSync(new URL('../config/default.json', import.meta.url), 'utf8'));
 const cloneConfig = () => JSON.parse(JSON.stringify(config));
@@ -202,6 +205,31 @@ test('dashboard state API shape', () => {
   assert.ok('sourceHealth' in state);
   assert.ok('effectiveRisk' in state.config);
   assert.ok('tradeHistory' in state.portfolio);
+});
+
+test('trade history endpoint data includes persisted closed trades', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sniper-history-'));
+  const file = join(dir, 'history.jsonl');
+  writeFileSync(file, `${JSON.stringify({
+    ts: '2026-06-02T10:00:00.000Z',
+    type: 'trade:close',
+    at: 1000,
+    mint: 'MINT1',
+    name: 'Real Meme',
+    symbol: 'MEME',
+    sizeSol: 0.5,
+    entryPrice: 1,
+    exitPrice: 1.3,
+    pnlSol: 0.15,
+    feesSol: 0.01,
+    reason: 'take profit'
+  })}\n`);
+
+  const [trade] = mergedTradeHistory([], file);
+  assert.equal(trade.name, 'Real Meme');
+  assert.equal(trade.symbol, 'MEME');
+  assert.ok(Math.abs(trade.netPnlSol - 0.14) < 0.000001);
+  assert.equal(trade.reason, 'take profit');
 });
 
 test('dashboard watched tokens are newest first', () => {

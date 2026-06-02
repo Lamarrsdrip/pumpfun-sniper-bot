@@ -114,9 +114,16 @@ const presetProfiles = {
 
 async function refresh() {
   try {
-    const response = await fetch('/api/state');
+    const [response, tradesResponse] = await Promise.all([
+      fetch('/api/state'),
+      fetch('/api/trades')
+    ]);
     if (!response.ok) throw new Error(`state API ${response.status}`);
     const state = await response.json();
+    if (tradesResponse.ok) {
+      state.portfolio = state.portfolio || {};
+      state.portfolio.tradeHistory = await tradesResponse.json();
+    }
     latestState = state;
     renderState(state);
   } catch (error) {
@@ -871,11 +878,35 @@ function toast(text) {
 async function copyText(text, message) {
   if (!text) return;
   try {
-    await navigator.clipboard.writeText(text);
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      copyTextFallback(text);
+    }
     toast(message);
   } catch {
-    toast('Copy failed');
+    try {
+      copyTextFallback(text);
+      toast(message);
+    } catch {
+      toast('Copy failed. Select and copy manually.');
+    }
   }
+}
+
+function copyTextFallback(text) {
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.left = '-9999px';
+  area.style.top = '0';
+  document.body.appendChild(area);
+  area.focus();
+  area.select();
+  const ok = document.execCommand('copy');
+  area.remove();
+  if (!ok) throw new Error('copy command rejected');
 }
 
 function openUrl(url) {

@@ -17,7 +17,18 @@ export class JsonlLogger {
 export function readJsonl(file, limit = 500) {
   const fullPath = path.resolve(file);
   if (!fs.existsSync(fullPath)) return [];
-  const lines = fs.readFileSync(fullPath, 'utf8').trim().split(/\r?\n/).filter(Boolean);
+  const stats = fs.statSync(fullPath);
+  const maxBytes = Math.min(stats.size, Math.max(512_000, limit * 4096));
+  const fd = fs.openSync(fullPath, 'r');
+  const buffer = Buffer.alloc(maxBytes);
+  try {
+    fs.readSync(fd, buffer, 0, maxBytes, stats.size - maxBytes);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const text = buffer.toString('utf8');
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if (stats.size > maxBytes && lines.length) lines.shift();
   return lines.slice(-limit).map((line) => {
     try {
       return JSON.parse(line);

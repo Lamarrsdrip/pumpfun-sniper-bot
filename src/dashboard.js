@@ -21,7 +21,7 @@ export function startDashboard({ config, engine, events }) {
       return;
     }
     if (req.method === 'GET' && url.pathname === '/api/trades') {
-      sendJson(res, engine.dashboardState().portfolio.tradeHistory || []);
+      sendJson(res, mergedTradeHistory(engine.dashboardState().portfolio.tradeHistory || [], config.historyPath));
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/paper/buy') {
@@ -87,6 +87,47 @@ export function startDashboard({ config, engine, events }) {
 
 function stripInternal(value) {
   return JSON.parse(JSON.stringify(value, (key, entry) => key === 'raw' ? undefined : entry));
+}
+
+export function mergedTradeHistory(memoryTrades = [], historyPath) {
+  const persisted = readJsonl(historyPath, 800)
+    .filter((event) => event.type === 'trade:close')
+    .map(normalizeClosedTrade)
+    .filter((trade) => trade.mint);
+  const byKey = new Map();
+  for (const trade of [...persisted, ...memoryTrades.map(normalizeClosedTrade)]) {
+    const key = trade.executionId || trade.txSignature || `${trade.mint}:${trade.at}:${trade.exitPrice}:${trade.netPnlSol}`;
+    byKey.set(key, trade);
+  }
+  return [...byKey.values()]
+    .sort((a, b) => Number(b.at || 0) - Number(a.at || 0))
+    .slice(0, 120);
+}
+
+function normalizeClosedTrade(trade = {}) {
+  const feesSol = Number(trade.feesSol || 0);
+  const grossPnlSol = Number(trade.grossPnlSol ?? trade.pnlSol ?? 0);
+  const netPnlSol = Number(trade.netPnlSol ?? (grossPnlSol - feesSol));
+  return {
+    at: trade.at || Date.parse(trade.ts || '') || Date.now(),
+    mint: String(trade.mint || ''),
+    name: String(trade.name || ''),
+    symbol: String(trade.symbol || ''),
+    sizeSol: Number(trade.sizeSol || 0),
+    entryPrice: Number(trade.entryPrice || 0),
+    exitPrice: Number(trade.exitPrice || 0),
+    grossPnlSol,
+    netPnlSol,
+    feesSol,
+    entryFeesSol: Number(trade.entryFeesSol || 0),
+    exitFeesSol: Number(trade.exitFeesSol || 0),
+    maxDrawdownPct: Number(trade.maxDrawdownPct || 0),
+    entryScore: trade.entryScore,
+    exitScore: trade.exitScore,
+    reason: String(trade.reason || ''),
+    executionId: String(trade.executionId || trade.execution?.id || ''),
+    txSignature: String(trade.txSignature || trade.execution?.txSignature || '')
+  };
 }
 
 async function handleJsonAction(req, res, action) {
