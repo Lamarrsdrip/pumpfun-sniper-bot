@@ -61,6 +61,18 @@ test('risk sizing scales from account balance and profile', () => {
   assert.ok(whale.maxRiskPerTradePct < small.maxRiskPerTradePct);
 });
 
+test('token state does not display contract fragments as real names', () => {
+  const token = new TokenState({
+    mint: '9xQeWvG816bUx9EPjHmaT23yvVM2ZWKPU5v93GsKpump',
+    name: '7PQFDEA4LV',
+    symbol: '76QZCYTSHB'
+  });
+  const snapshot = token.snapshot(Date.now());
+
+  assert.equal(snapshot.name, '');
+  assert.equal(snapshot.symbol, '');
+});
+
 test('paper broker buy/sell/equity includes open market value and fees', async () => {
   const broker = new PaperBroker(10);
   const position = { entryPrice: 1, currentPrice: 1, sizeSol: 1, remainingPct: 1, unrealizedPnlSol: 0 };

@@ -281,7 +281,7 @@ function renderLearning(learning) {
 }
 
 function learningRow(item) {
-  return `<div class="learning-row"><strong>${escapeHtml(item.symbol || item.name || short(item.mint))} <span>${signedPct(item.maxRunPct || 0)}</span></strong><small>${escapeHtml((item.reasons || []).slice(0, 2).join(' | ') || item.outcome || 'pending')}</small></div>`;
+  return `<div class="learning-row"><strong>${tokenName(item)} <span>${signedPct(item.maxRunPct || 0)}</span></strong><small>${short(item.mint)} / ${escapeHtml((item.reasons || []).slice(0, 2).join(' | ') || item.outcome || 'pending')}</small></div>`;
 }
 
 function renderOnboarding(state) {
@@ -1102,11 +1102,19 @@ function cleanDisplayName(value = '') {
   const text = String(value || '').trim();
   if (!text) return '';
   if (looksLikeMint(text)) return '';
+  if (looksLikeGeneratedTicker(text)) return '';
   return text.slice(0, 42);
 }
 function looksLikeMint(value = '') {
   const text = String(value || '').replace(/\s+/g, '');
   return text.length >= 32 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(text);
+}
+function looksLikeGeneratedTicker(value = '') {
+  const text = String(value || '').trim();
+  if (!/^[A-Z0-9]{9,12}$/.test(text)) return false;
+  if (/\d/.test(text)) return true;
+  const vowels = (text.match(/[AEIOU]/g) || []).length;
+  return text.length >= 10 && vowels <= 1;
 }
 function tokenIcon(t) {
   const src = safeImageUrl(t.icon);

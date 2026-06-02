@@ -14,10 +14,12 @@ export class DexScreenerClient {
     for (const profile of solana.slice(0, 18)) {
       if (this.tracked.has(profile.tokenAddress)) continue;
       this.tracked.set(profile.tokenAddress, profile);
+      const profileName = cleanProfileText(profile.description?.split('\n')[0] || '');
+      const profileSymbol = cleanProfileText(symbolFromProfile(profile));
       this.events.emit('feed:newToken', {
         mint: profile.tokenAddress,
-        name: profile.description?.split('\n')[0]?.slice(0, 48) || symbolFromProfile(profile),
-        symbol: symbolFromProfile(profile),
+        name: profileName,
+        symbol: profileSymbol,
         uri: profile.url,
         icon: profile.icon,
         createdAt: Date.now(),
@@ -108,7 +110,22 @@ export class SolanaRpcHealth {
 function symbolFromProfile(profile) {
   const url = String(profile.url || '');
   const last = url.split('/').filter(Boolean).at(-1);
-  return (last || profile.tokenAddress.slice(0, 5)).replace(/[^a-z0-9]/gi, '').slice(0, 10).toUpperCase();
+  const cleaned = (last || '').replace(/[^a-z0-9]/gi, '').slice(0, 10).toUpperCase();
+  return looksLikeAddressFallback(cleaned) ? '' : cleaned;
+}
+
+function cleanProfileText(value = '') {
+  const text = String(value || '').trim();
+  if (!text || looksLikeAddressFallback(text)) return '';
+  return text.slice(0, 64);
+}
+
+function looksLikeAddressFallback(value = '') {
+  const text = String(value || '').trim();
+  if (text.length >= 32 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(text)) return true;
+  if (/^[A-Z0-9]{9,12}$/.test(text) && /\d/.test(text)) return true;
+  const vowels = (text.match(/[AEIOU]/g) || []).length;
+  return /^[A-Z0-9]{10,12}$/.test(text) && vowels <= 1;
 }
 
 function estimateHolders(pair) {

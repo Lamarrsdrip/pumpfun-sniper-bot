@@ -226,12 +226,21 @@ function cleanTokenText(value, fallback = '') {
   const text = String(value || '').trim();
   if (!text) return fallback;
   if (looksLikeMint(text)) return fallback;
+  if (looksLikeGeneratedTicker(text)) return fallback;
   return text.slice(0, 64);
 }
 
 function looksLikeMint(text) {
   const compact = text.replace(/\s+/g, '');
   return compact.length >= 32 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(compact);
+}
+
+function looksLikeGeneratedTicker(text) {
+  const compact = text.trim();
+  if (!/^[A-Z0-9]{9,12}$/.test(compact)) return false;
+  if (/\d/.test(compact)) return true;
+  const vowels = (compact.match(/[AEIOU]/g) || []).length;
+  return compact.length >= 10 && vowels <= 1;
 }
 
 function buildCandles(history, bucketMs) {
