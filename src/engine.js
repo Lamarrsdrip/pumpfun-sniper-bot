@@ -432,13 +432,16 @@ export class SniperEngine {
   dashboardState() {
     const closed = this.stats.wins + this.stats.losses;
     const effectiveRisk = this.risk.effectiveLimits(this.broker.equitySol);
+    const accountPnlSol = Number(this.broker.equitySol || 0) - Number(this.config.paperStartingSol || 0);
     return {
       stats: {
         ...this.stats,
         winRate: closed ? this.stats.wins / closed : 0,
-        averagePnlSol: closed ? this.stats.totalPnlSol / closed : 0
+        averagePnlSol: closed ? this.stats.totalPnlSol / closed : 0,
+        accountPnlSol
       },
       equitySol: this.broker.equitySol,
+      accountPnlSol,
       cashSol: this.broker.cashSol,
       openValueSol: this.broker.openValueSol,
       unrealizedPnlSol: this.broker.unrealizedPnlSol,
@@ -446,6 +449,7 @@ export class SniperEngine {
       config: {
         mode: this.config.mode,
         dataMode: this.config.dataMode,
+        paperStartingSol: Number(this.config.paperStartingSol || 0),
         strictScoreThreshold: this.config.strictScoreThreshold,
         pumpPortalApiKey: Boolean(this.config.pumpPortalApiKey),
         heliusApiKey: Boolean(this.config.sources?.heliusApiKey),

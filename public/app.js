@@ -139,6 +139,9 @@ function renderState(state) {
   const equity = Number(state.equitySol || 0);
   const effectiveRisk = state.config.effectiveRisk || state.config.risk || {};
   const maxRisk = Number(effectiveRisk.maxPositionSizeSol || 0) * Number(effectiveRisk.maxOpenTrades || state.config.risk.maxOpenTrades || 1);
+  const accountPnl = Number.isFinite(Number(state.accountPnlSol))
+    ? Number(state.accountPnlSol)
+    : equity - Number(state.config.paperStartingSol || 10);
   if ((state.watchedTokens || []).length && els.networkLabel.textContent === 'SYNCING') {
     setFeed(state.config.dataMode === 'mock' ? 'mock-live' : 'connected');
   }
@@ -150,8 +153,8 @@ function renderState(state) {
   renderModeSwitch(state.config);
   els.threshold.textContent = `Score ${state.config.strictScoreThreshold}+`;
   els.equity.textContent = fixed(equity);
-  els.pnl.textContent = signed(stats.totalPnlSol || 0);
-  els.pnl.className = Number(stats.totalPnlSol || 0) >= 0 ? 'green' : 'red';
+  els.pnl.textContent = signed(accountPnl);
+  els.pnl.className = accountPnl >= 0 ? 'green' : 'red';
   els.activePositions.textContent = positions.length;
   els.openRisk.textContent = fixed(deployed);
   els.unrealizedPnl.textContent = signed(unrealized);
@@ -161,7 +164,7 @@ function renderState(state) {
   els.blocked.textContent = stats.blocked || 0;
   els.rugBlocks.textContent = `${stats.blockedRugRisk || 0} rug-risk`;
   els.fees.textContent = fixed(state.feesSol || 0);
-  els.dailyPnl.textContent = signed(stats.totalPnlSol || 0);
+  els.dailyPnl.textContent = signed(accountPnl);
   els.exposurePct.textContent = pct(maxRisk ? deployed / maxRisk : 0);
   els.healthScore.textContent = healthScore(state);
 

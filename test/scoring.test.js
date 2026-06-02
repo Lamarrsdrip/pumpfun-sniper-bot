@@ -203,6 +203,9 @@ test('dashboard state API shape', () => {
   assert.ok('openPositions' in state);
   assert.ok('learning' in state);
   assert.ok('sourceHealth' in state);
+  assert.ok('accountPnlSol' in state);
+  assert.ok('accountPnlSol' in state.stats);
+  assert.ok('paperStartingSol' in state.config);
   assert.ok('effectiveRisk' in state.config);
   assert.ok('tradeHistory' in state.portfolio);
 });
