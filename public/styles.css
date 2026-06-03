@@ -410,6 +410,41 @@ p, small, label { color: var(--muted); }
   margin-top: 2px;
   overflow-wrap: anywhere;
 }
+.review-list {
+  display: grid;
+  gap: 8px;
+}
+.review-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.review-metrics span,
+.review-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.026);
+  padding: 9px;
+}
+.review-metrics small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+.review-metrics strong {
+  display: block;
+  margin-top: 3px;
+}
+.review-item {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.review-item.warn {
+  color: var(--yellow);
+  border-color: rgba(255,204,74,0.22);
+}
 .bottom-grid {
   display: grid;
   grid-template-columns: 0.7fr 1fr 0.78fr;

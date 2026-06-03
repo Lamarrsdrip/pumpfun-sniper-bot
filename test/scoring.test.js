@@ -13,6 +13,7 @@ import { BotEvents } from '../src/events.js';
 import { SniperEngine } from '../src/engine.js';
 import { PortfolioManager } from '../src/portfolio-manager.js';
 import { mergedTradeHistory } from '../src/dashboard.js';
+import { buildPerformanceReview } from '../src/performance-review.js';
 
 const config = JSON.parse(readFileSync(new URL('../config/default.json', import.meta.url), 'utf8'));
 const cloneConfig = () => JSON.parse(JSON.stringify(config));
@@ -50,6 +51,17 @@ test('risk manager enforces daily loss and cooldown', () => {
   assert.ok(reasons.includes('cooldown after loss is active'));
   const nextDayReasons = risk.canOpen({ openPositions: 0, equitySol: config.paperStartingSol, at: Date.UTC(2026, 0, 2) });
   assert.ok(!nextDayReasons.includes('max daily loss reached'));
+});
+
+test('risk manager locks daily profit after giveback', () => {
+  const cfg = cloneConfig();
+  cfg.risk.dailyProfitLockPct = 0.05;
+  cfg.risk.dailyProfitGivebackPct = 0.35;
+  const risk = new RiskManager(cfg);
+  risk.observeClosedTrade(0.6, Date.UTC(2026, 0, 1));
+  assert.ok(!risk.canOpen({ openPositions: 0, equitySol: 10.6, at: Date.UTC(2026, 0, 1) + 1000 }).includes('daily profit lock is protecting gains'));
+  risk.observeClosedTrade(-0.25, Date.UTC(2026, 0, 1) + 2000);
+  assert.ok(risk.canOpen({ openPositions: 0, equitySol: 10.35, at: Date.UTC(2026, 0, 1) + 3000 }).includes('daily profit lock is protecting gains'));
 });
 
 test('risk sizing scales from account balance and profile', () => {
@@ -244,6 +256,31 @@ test('trade history endpoint data includes persisted closed trades', () => {
   assert.equal(trade.symbol, 'MEME');
   assert.ok(Math.abs(trade.netPnlSol - 0.14) < 0.000001);
   assert.equal(trade.reason, 'take profit');
+});
+
+test('performance review reports missing proof and setup blockers', () => {
+  const review = buildPerformanceReview({
+    trades: [{
+      type: 'trade:close',
+      mint: 'MINT1',
+      pnlSol: 0.1,
+      netPnlSol: 0.08,
+      feesSol: 0.02
+    }],
+    state: { accountPnlSol: 0.08 },
+    status: {
+      sources: {
+        pumpPortal: { apiKey: 'missing' },
+        devActivity: { heliusApiKey: 'missing' },
+        holders: { birdeyeApiKey: 'missing' }
+      },
+      liveTrading: { ready: false, reason: 'MODE is not live' }
+    }
+  });
+
+  assert.ok(review.score < 70);
+  assert.ok(review.blockers.some((item) => item.includes('PumpPortal')));
+  assert.ok(review.blockers.some((item) => item.includes('100 reviewed')));
 });
 
 test('dashboard watched tokens are newest first', () => {

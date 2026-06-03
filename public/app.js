@@ -67,6 +67,9 @@ els.simpleRugRisk = q('#simpleRugRisk');
 els.simpleMomentum = q('#simpleMomentum');
 els.simpleActivePnl = q('#simpleActivePnl');
 els.simpleScannerStatus = q('#simpleScannerStatus');
+els.reviewScore = q('#reviewScore');
+els.reviewSummary = q('#reviewSummary');
+els.reviewList = q('#reviewList');
 els.blockedRanList = q('#blockedRanList');
 els.missedRunList = q('#missedRunList');
 
@@ -114,9 +117,10 @@ const presetProfiles = {
 
 async function refresh() {
   try {
-    const [response, tradesResponse] = await Promise.all([
+    const [response, tradesResponse, reviewResponse] = await Promise.all([
       fetch('/api/state'),
-      fetch('/api/trades')
+      fetch('/api/trades'),
+      fetch('/api/review')
     ]);
     if (!response.ok) throw new Error(`state API ${response.status}`);
     const state = await response.json();
@@ -124,6 +128,7 @@ async function refresh() {
       state.portfolio = state.portfolio || {};
       state.portfolio.tradeHistory = await tradesResponse.json();
     }
+    if (reviewResponse.ok) state.review = await reviewResponse.json();
     latestState = state;
     renderState(state);
   } catch (error) {
@@ -184,6 +189,7 @@ function renderState(state) {
   renderTicker(state.watchedTokens || []);
   renderOnboarding(state);
   renderBeginner(state);
+  renderReview(state.review);
   renderSourceStrip(state.sourceHealth || {}, state.config);
   renderIntelligence(state.intelligence || {});
   renderLearning(state.learning || {});
@@ -252,6 +258,32 @@ function renderBeginner(state) {
       <button class="action-button ${liveButtonClass()}" data-action="live-buy" data-mint="${escapeAttr(best.mint)}">${liveButtonLabel()}</button>
     </div>`;
   drawMiniChart(els.bestCoinCard.querySelector('canvas'), best);
+}
+
+function renderReview(review = null) {
+  if (!els.reviewScore || !els.reviewSummary || !els.reviewList) return;
+  if (!review) {
+    els.reviewScore.textContent = '--';
+    els.reviewSummary.textContent = 'Waiting for backend review';
+    els.reviewList.className = 'review-list empty-state';
+    els.reviewList.textContent = 'Review will appear after scanner state loads.';
+    return;
+  }
+  const metrics = review.metrics || {};
+  els.reviewScore.textContent = `${review.score || 0}/100`;
+  els.reviewScore.className = `score-badge ${scoreClass(review.score || 0, 70)}`;
+  els.reviewSummary.textContent = `${review.label || 'Review'} / ${metrics.trades || 0} closed trades / PF ${fixed(metrics.profitFactor || 0)}`;
+  const blockers = (review.blockers || []).slice(0, 4);
+  const actions = (review.recommendations || []).slice(0, 3);
+  els.reviewList.className = 'review-list';
+  els.reviewList.innerHTML = `
+    <div class="review-metrics">
+      <span><small>Net</small><strong class="${Number(metrics.accountPnlSol || metrics.netPnlSol || 0) >= 0 ? 'green' : 'red'}">${signed(metrics.accountPnlSol || metrics.netPnlSol || 0)}</strong></span>
+      <span><small>Win</small><strong>${pct(metrics.winRate || 0)}</strong></span>
+      <span><small>Fees</small><strong>${pct(metrics.feeDragPct || 0)}</strong></span>
+    </div>
+    ${(blockers.length ? blockers : ['No critical blocker from current sample.']).map((item) => `<div class="review-item warn">${escapeHtml(item)}</div>`).join('')}
+    ${actions.map((item) => `<div class="review-item">${escapeHtml(item)}</div>`).join('')}`;
 }
 
 function renderModeSwitch(config) {
@@ -564,6 +596,7 @@ function renderRiskConsole(config) {
     ['Max position', effective.maxPositionSizeSol, effective.equitySol * profile.maxPositionSizePct, 'SOL'],
     ['Daily loss stop', effective.maxDailyLossSol, effective.equitySol * profile.maxDailyLossPct, 'SOL'],
     ['Daily loss left', effective.dailyLossRemainingSol, effective.dailyLossRemainingSol, 'SOL'],
+    ['Profit lock', effective.dailyProfitLockSol, effective.dailyProfitLockSol, 'SOL'],
     ['Slippage cap', risk.maxSlippagePct, risk.maxSlippagePct, '%']
   ];
   els.settings.innerHTML = display.map(([label, current, next, unit]) => `

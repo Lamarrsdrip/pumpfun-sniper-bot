@@ -2,6 +2,8 @@ export class RiskManager {
   constructor(config) {
     this.config = config;
     this.dailyLossSol = 0;
+    this.dailyPnlSol = 0;
+    this.dailyHighPnlSol = 0;
     this.consecutiveLosses = 0;
     this.cooldownUntil = 0;
     this.equityHigh = config.paperStartingSol || 0;
@@ -18,6 +20,7 @@ export class RiskManager {
     if (this.killSwitch) reasons.push('manual/emergency kill switch is active');
     if (openPositions >= limits.maxOpenTrades) reasons.push('max open trades reached');
     if (this.dailyLossSol >= limits.maxDailyLossSol) reasons.push('max daily loss reached');
+    if (this.profitLockTriggered(limits)) reasons.push('daily profit lock is protecting gains');
     if (this.consecutiveLosses >= this.config.risk.stopAfterConsecutiveLosses) reasons.push('too many consecutive losses');
     if (at < this.cooldownUntil) reasons.push('cooldown after loss is active');
     this.equityHigh = Math.max(this.equityHigh, equitySol);
@@ -39,6 +42,8 @@ export class RiskManager {
 
   observeClosedTrade(pnlSol, at = Date.now()) {
     this.resetDailyIfNeeded(at);
+    this.dailyPnlSol += Number(pnlSol || 0);
+    this.dailyHighPnlSol = Math.max(this.dailyHighPnlSol, this.dailyPnlSol);
     if (pnlSol < 0) {
       this.dailyLossSol += Math.abs(pnlSol);
       this.consecutiveLosses += 1;
@@ -58,6 +63,8 @@ export class RiskManager {
     if (key !== this.dailyLossDay) {
       this.dailyLossDay = key;
       this.dailyLossSol = 0;
+      this.dailyPnlSol = 0;
+      this.dailyHighPnlSol = 0;
       this.consecutiveLosses = 0;
       this.cooldownUntil = 0;
       this.equityHigh = Math.max(this.equityHigh, this.lastEquitySol);
@@ -73,12 +80,16 @@ export class RiskManager {
     const maxPositionSizePct = Number(profile.maxPositionSizePct ?? r.maxPositionSizePct ?? 0.03);
     const maxDailyLossPct = Number(profile.maxDailyLossPct ?? r.maxDailyLossPct ?? 0.06);
     const emergencyStopDrawdownPct = Number(profile.emergencyStopDrawdownPct ?? r.emergencyStopDrawdownPct ?? 0.1);
+    const dailyProfitLockSol = bounded(equity * Number(r.dailyProfitLockPct || 0), 0, Number.POSITIVE_INFINITY);
+    const dailyProfitGivebackSol = bounded(dailyProfitLockSol * Number(r.dailyProfitGivebackPct || 0.35), 0, Number.POSITIVE_INFINITY);
     return {
       accountType: profileName,
       equitySol: equity,
       maxRiskPerTradeSol: bounded(equity * maxRiskPerTradePct, r.minRiskPerTradeSol ?? 0.001, r.maxRiskPerTradeSol ?? Number.POSITIVE_INFINITY),
       maxPositionSizeSol: bounded(equity * maxPositionSizePct, r.minPositionSizeSol ?? 0.001, r.maxPositionSizeSol ?? Number.POSITIVE_INFINITY),
       maxDailyLossSol: bounded(equity * maxDailyLossPct, r.minDailyLossSol ?? 0.001, r.maxDailyLossSol ?? Number.POSITIVE_INFINITY),
+      dailyProfitLockSol,
+      dailyProfitGivebackSol,
       emergencyStopDrawdownSol: bounded(equity * emergencyStopDrawdownPct, r.minEmergencyDrawdownSol ?? 0.001, r.emergencyStopDrawdownSol ?? Number.POSITIVE_INFINITY),
       maxOpenTrades: Number(profile.maxOpenTrades || r.maxOpenTrades || 1),
       maxRiskPerTradePct,
@@ -86,8 +97,20 @@ export class RiskManager {
       maxDailyLossPct,
       emergencyStopDrawdownPct,
       dailyLossSol: this.dailyLossSol,
+      dailyPnlSol: this.dailyPnlSol,
+      dailyHighPnlSol: this.dailyHighPnlSol,
+      dailyProfitLockActive: this.profitLockTriggered({ dailyProfitLockSol, dailyProfitGivebackSol }),
       dailyLossRemainingSol: Math.max(0, bounded(equity * maxDailyLossPct, r.minDailyLossSol ?? 0.001, r.maxDailyLossSol ?? Number.POSITIVE_INFINITY) - this.dailyLossSol)
     };
+  }
+
+  profitLockTriggered(limits = {}) {
+    const r = this.config.risk;
+    const lockSol = Number(limits.dailyProfitLockSol ?? (this.lastEquitySol * Number(r.dailyProfitLockPct || 0)));
+    const givebackSol = Number(limits.dailyProfitGivebackSol ?? (lockSol * Number(r.dailyProfitGivebackPct || 0.35)));
+    return lockSol > 0
+      && this.dailyHighPnlSol >= lockSol
+      && this.dailyHighPnlSol - this.dailyPnlSol >= givebackSol;
   }
 }
 

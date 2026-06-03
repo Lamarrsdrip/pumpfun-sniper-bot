@@ -327,6 +327,8 @@ export class SniperEngine {
     assignNumber(risk, settings, 'maxSlippagePct', 0.001, 0.5);
     assignNumber(risk, settings, 'maxDailyLossSol', 0.001, 500);
     assignNumber(risk, settings, 'maxDailyLossPct', 0.001, 0.5);
+    assignNumber(risk, settings, 'dailyProfitLockPct', 0.001, 1);
+    assignNumber(risk, settings, 'dailyProfitGivebackPct', 0.05, 0.95);
     assignNumber(risk, settings, 'emergencyStopDrawdownPct', 0.001, 0.6);
     assignNumber(risk, settings, 'maxOpenTrades', 1, 20, true);
     assignNumber(management, settings, 'hardStopLossPct', 0.01, 0.9);

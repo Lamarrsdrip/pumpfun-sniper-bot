@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { readJsonl } from './logger.js';
+import { buildPerformanceReview } from './performance-review.js';
 
 export function startDashboard({ config, engine, events }) {
   const clients = new Set();
@@ -22,6 +23,12 @@ export function startDashboard({ config, engine, events }) {
     }
     if (req.method === 'GET' && url.pathname === '/api/trades') {
       sendJson(res, mergedTradeHistory(engine.dashboardState().portfolio.tradeHistory || [], config.historyPath));
+      return;
+    }
+    if (req.method === 'GET' && url.pathname === '/api/review') {
+      const state = engine.dashboardState();
+      const trades = mergedTradeHistory(state.portfolio.tradeHistory || [], config.historyPath);
+      sendJson(res, buildPerformanceReview({ trades, state, status: engine.status() }));
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/paper/buy') {

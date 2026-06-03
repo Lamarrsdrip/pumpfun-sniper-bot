@@ -54,6 +54,8 @@
     "maxDailyLossPct": 0.2,
     "maxOpenTrades": 2,
     "cooldownAfterLossMs": 600000,
+    "dailyProfitLockPct": 0.08,
+    "dailyProfitGivebackPct": 0.35,
     "minEmergencyDrawdownSol": 0.3,
     "emergencyStopDrawdownSol": 35,
     "emergencyStopDrawdownPct": 0.12,
