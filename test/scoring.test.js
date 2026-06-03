@@ -140,6 +140,17 @@ test('trailing stop closes after profitable reversal', async () => {
   assert.equal(closes.at(-1).reason, 'winner losing momentum');
 });
 
+test('winner losing momentum exit waits for fee-aware net profit', async () => {
+  const { tradeManager, events } = testTradeManager();
+  const closes = [];
+  events.on('trade:close', (event) => closes.push(event));
+  const position = await openTestPosition(tradeManager);
+  await tradeManager.update({ mint: position.mint, price: 1.01, recentBuySellRatio: 1.2, devSoldPct: 0, drawdownFromHighPct: 0.2, lastTradeAgeMs: 1000 }, { score: 78 }, 2000);
+
+  assert.equal(closes.length, 0);
+  assert.equal(tradeManager.positions.has(position.mint), true);
+});
+
 test('take profit partials reduce remaining position', async () => {
   const { tradeManager, events } = testTradeManager();
   const partials = [];

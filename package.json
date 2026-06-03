@@ -8,6 +8,7 @@
     "start": "node src/index.js",
     "scan": "node src/index.js scan",
     "simulate": "node src/index.js simulate data/sample-history.jsonl",
+    "history": "node src/history-report.js",
     "test": "node --test"
   },
   "engines": {

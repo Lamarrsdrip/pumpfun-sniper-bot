@@ -77,6 +77,8 @@
     "runnerPct": 0.1,
     "trailingStartPct": 0.28,
     "trailingDistancePct": 0.16,
+    "minProfitProtectPct": 0.08,
+    "minNetProfitBufferPct": 0.02,
     "staleMomentumMs": 30000,
     "timeStopMs": 90000
   },

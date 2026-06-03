@@ -207,7 +207,16 @@ function emergencyExitReason(snapshot, change, config) {
   if (change <= -config.management.hardStopLossPct) return 'hard max loss stop';
   if (snapshot.devSoldPct > config.watch.maxDevSoldPct) return 'dev wallet sold after entry';
   if (snapshot.recentBuySellRatio < 1 / config.risk.abnormalSellPressureRatio) return 'abnormal sell pressure';
-  if (snapshot.drawdownFromHighPct > config.management.trailingDistancePct && change > 0) return 'winner losing momentum';
+  if (snapshot.drawdownFromHighPct > config.management.trailingDistancePct && change >= minProtectableProfitPct(config)) return 'winner losing momentum';
   if (snapshot.lastTradeAgeMs > config.management.staleMomentumMs) return 'volume collapsed';
   return '';
+}
+
+function minProtectableProfitPct(config) {
+  const sideCostPct = 0.005 + Math.min(Number(config.risk.maxSlippagePct || 0), 0.08) * 0.15;
+  const roundTripPct = sideCostPct * 2;
+  return Math.max(
+    Number(config.management.minProfitProtectPct || 0.08),
+    roundTripPct + Number(config.management.minNetProfitBufferPct || 0.02)
+  );
 }
