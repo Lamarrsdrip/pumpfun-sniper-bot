@@ -37,7 +37,7 @@ In another terminal:
 npm run mobile
 ```
 
-Use an Expo development build for native secure storage, push notifications, and production-like testing. `127.0.0.1` only works for an iOS simulator on the same Mac. For a physical phone, set `EXPO_PUBLIC_API_URL` to your Mac's LAN address or a secured development URL.
+The default command opens in Expo Go for the fastest native preview. Use `npm run start:dev-client --workspace @nairameme/mobile` after installing a custom development build for production-like push, signing, and native integration testing. `127.0.0.1` only works for an iOS simulator on the same Mac. For a physical phone, set `EXPO_PUBLIC_API_URL` to your Mac's LAN address or a secured development URL.
 
 ## Run Admin Portal
 

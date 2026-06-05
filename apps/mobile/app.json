@@ -38,9 +38,6 @@
     ],
     "extra": {
       "router": {}
-    },
-    "experiments": {
-      "typedRoutes": true
     }
   }
 }
