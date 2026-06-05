@@ -36,3 +36,4 @@ temp/
 *.tar.gz
 .DS_Store
 Thumbs.db
+.worktrees/
