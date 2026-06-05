@@ -32,7 +32,7 @@ export default function AuthScreen() {
         <TextInput value={identifier} onChangeText={setIdentifier} placeholder="Phone number or email" placeholderTextColor={dark.muted} style={styles.input} autoCapitalize="none" keyboardType="email-address" />
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <Button title={busy ? 'Checking provider...' : 'Continue securely'} disabled={busy || identifier.trim().length < 5} onPress={continueSecurely} />
-        <Button title="Explore read-only" kind="secondary" onPress={() => router.replace('/(tabs)')} />
+        <Button title="Enter app preview" kind="secondary" onPress={() => router.replace('/(tabs)')} />
         <Text style={styles.legal}>By continuing, you agree to identity checks, trading risk disclosures, and the platform terms. Meme coins can lose most or all of their value.</Text>
       </Card>
     </Screen>
