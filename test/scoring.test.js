@@ -14,6 +14,7 @@ import { SniperEngine } from '../src/engine.js';
 import { PortfolioManager } from '../src/portfolio-manager.js';
 import { mergedTradeHistory } from '../src/dashboard.js';
 import { buildPerformanceReview } from '../src/performance-review.js';
+import { decodeRequestedPath, resolvePublicFile } from '../src/dashboard.js';
 
 const config = JSON.parse(readFileSync(new URL('../config/default.json', import.meta.url), 'utf8'));
 const cloneConfig = () => JSON.parse(JSON.stringify(config));
@@ -196,6 +197,18 @@ test('fake volume and dev sell blocks trigger', () => {
   const reasons = blockReasons(snapshot, score, config);
   assert.ok(reasons.includes('possible fake volume or wallet cycling'));
   assert.ok(reasons.includes('dev wallet is selling'));
+});
+
+test('dashboard static path resolver blocks sibling-prefix traversal', () => {
+  const publicDir = '/tmp/app/public';
+  assert.equal(resolvePublicFile(publicDir, '../publicity/secret.txt'), null);
+  assert.equal(resolvePublicFile(publicDir, '../../etc/passwd'), null);
+  assert.equal(resolvePublicFile(publicDir, 'assets/app.js'), '/tmp/app/public/assets/app.js');
+});
+
+test('dashboard rejects malformed encoded paths without throwing', () => {
+  assert.equal(decodeRequestedPath('/%E0%A4%A'), null);
+  assert.equal(decodeRequestedPath('/assets/app.js'), 'assets/app.js');
 });
 
 test('late-entry top buying is blocked', () => {

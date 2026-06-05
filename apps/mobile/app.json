@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "NairaMeme",
+    "slug": "nairameme",
+    "scheme": "nairameme",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ng.nairameme.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Use Face ID to protect your NairaMeme account and approve sensitive actions."
+      }
+    },
+    "android": {
+      "package": "ng.nairameme.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#06110D"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "color": "#16C784"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#06110D",
+          "resizeMode": "contain"
+        }
+      ]
+    ],
+    "extra": {
+      "router": {}
+    },
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

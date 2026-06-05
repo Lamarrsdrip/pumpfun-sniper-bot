@@ -1,0 +1,852 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  RESTRICTED
+  SUSPENDED
+  CLOSED
+}
+
+enum KycStatus {
+  NOT_STARTED
+  PENDING
+  VERIFIED
+  REJECTED
+  REVIEW
+  EXPIRED
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+
+enum TransactionStatus {
+  CREATED
+  PENDING
+  PROCESSING
+  CONFIRMED
+  FAILED
+  REVERSED
+  CANCELLED
+  REVIEW
+}
+
+enum TradeSide {
+  BUY
+  SELL
+}
+
+enum BotMode {
+  OFF
+  PAPER
+  LIVE
+  PAUSED
+}
+
+enum RiskLevel {
+  SAFE
+  BALANCED
+  SNIPER
+}
+
+enum SubscriptionTier {
+  FREE
+  PRO
+  ELITE
+}
+
+enum CampaignChannel {
+  EMAIL
+  PUSH
+  IN_APP
+}
+
+enum CampaignStatus {
+  DRAFT
+  PENDING_APPROVAL
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum ProviderStatus {
+  UNCONFIGURED
+  CONFIGURED
+  CONNECTING
+  HEALTHY
+  DEGRADED
+  OFFLINE
+}
+
+model User {
+  id                 String             @id @default(uuid())
+  email              String?            @unique
+  phone              String?            @unique
+  passwordHash       String?
+  status             UserStatus         @default(PENDING)
+  kycStatus          KycStatus          @default(NOT_STARTED)
+  kycTier            Int                @default(0)
+  firstName          String?
+  lastName           String?
+  username           String?            @unique
+  avatarUrl          String?
+  bio                String?
+  referralCode       String             @unique
+  referredById       String?
+  countryCode        String             @default("NG")
+  timezone           String             @default("Africa/Lagos")
+  riskAcknowledgedAt DateTime?
+  termsAcceptedAt    DateTime?
+  deletedAt          DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  wallets            Wallet[]
+  referredBy         User?              @relation("UserReferrals", fields: [referredById], references: [id])
+  referrals          User[]             @relation("UserReferrals")
+  bankAccounts       BankAccount[]
+  virtualAccounts    VirtualAccount[]
+  deposits           Deposit[]
+  withdrawals        Withdrawal[]
+  trades             Trade[]
+  positions          Position[]
+  botSettings        BotSettings?
+  subscriptions      Subscription[]
+  posts              SocialPost[]
+  comments           SocialComment[]
+  likes              SocialLike[]
+  followers          Follow[]           @relation("FollowedUser")
+  following          Follow[]           @relation("FollowerUser")
+  copyAllocations    CopyAllocation[]   @relation("CopyFollower")
+  traderCopies       CopyAllocation[]   @relation("CopiedTrader")
+  achievements       UserAchievement[]
+  pushTokens         PushToken[]
+  notificationPrefs  NotificationPreference?
+  alerts             Alert[]
+  watchlistEntries   WatchlistEntry[]
+  traderProfile      TraderProfile?
+  communityMessages  CommunityMessage[]
+  communityPolls     CommunityPoll[]
+  campaignDeliveries CampaignDelivery[]
+  adminRoles         AdminRole[]
+  sessions           AuthSession[]
+}
+
+model AuthSession {
+  id           String   @id @default(uuid())
+  userId       String
+  refreshHash  String   @unique
+  deviceId     String?
+  deviceName   String?
+  ipAddress    String?
+  userAgent    String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, expiresAt])
+}
+
+model Wallet {
+  id           String        @id @default(uuid())
+  userId       String
+  currency     String
+  available    Decimal       @default(0) @db.Decimal(30, 8)
+  reserved     Decimal       @default(0) @db.Decimal(30, 8)
+  version      Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  user         User          @relation(fields: [userId], references: [id])
+  ledgerEntries LedgerEntry[]
+
+  @@unique([userId, currency])
+}
+
+model LedgerEntry {
+  id             String          @id @default(uuid())
+  walletId       String
+  reference      String
+  transactionId  String
+  direction      LedgerDirection
+  amount         Decimal         @db.Decimal(30, 8)
+  balanceAfter   Decimal         @db.Decimal(30, 8)
+  currency       String
+  category       String
+  metadata       Json?
+  createdAt      DateTime        @default(now())
+  wallet         Wallet          @relation(fields: [walletId], references: [id])
+  transaction    LedgerTransaction @relation(fields: [transactionId], references: [id])
+
+  @@unique([walletId, reference])
+  @@index([transactionId])
+  @@index([walletId, createdAt])
+}
+
+model LedgerTransaction {
+  id             String            @id @default(uuid())
+  reference      String            @unique
+  idempotencyKey String            @unique
+  status         TransactionStatus @default(CREATED)
+  category       String
+  metadata       Json?
+  postedAt       DateTime?
+  createdAt      DateTime          @default(now())
+  entries        LedgerEntry[]
+
+  @@index([status, createdAt])
+}
+
+model BankAccount {
+  id                  String   @id @default(uuid())
+  userId              String
+  bankCode            String
+  bankName            String
+  accountNumberCipher String
+  accountNumberLast4  String
+  accountName         String
+  recipientCode       String?
+  verifiedAt          DateTime?
+  disabledAt          DateTime?
+  createdAt           DateTime @default(now())
+  user                User     @relation(fields: [userId], references: [id])
+  withdrawals         Withdrawal[]
+}
+
+model VirtualAccount {
+  id                  String         @id @default(uuid())
+  userId              String
+  provider            String
+  providerCustomerId  String?
+  providerAccountId   String?
+  bankName            String
+  accountNumberCipher String
+  accountNumberLast4  String
+  accountName         String
+  active              Boolean        @default(true)
+  assignedAt          DateTime?
+  metadata            Json?
+  createdAt           DateTime       @default(now())
+  user                User           @relation(fields: [userId], references: [id])
+
+  @@unique([provider, providerAccountId])
+  @@index([userId, active])
+}
+
+model Deposit {
+  id                  String            @id @default(uuid())
+  userId              String
+  provider            String
+  providerReference   String?           @unique
+  clientReference     String            @unique
+  amountNgn           Decimal           @db.Decimal(30, 2)
+  feeNgn              Decimal           @default(0) @db.Decimal(30, 2)
+  status              TransactionStatus @default(CREATED)
+  senderName          String?
+  senderBank          String?
+  senderAccountLast4  String?
+  confirmedAt         DateTime?
+  failureReason       String?
+  reviewedById        String?
+  metadata            Json?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  user                User              @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Withdrawal {
+  id                 String            @id @default(uuid())
+  userId             String
+  bankAccountId      String
+  provider           String
+  providerReference  String?           @unique
+  clientReference    String            @unique
+  amountNgn          Decimal           @db.Decimal(30, 2)
+  feeNgn             Decimal           @default(0) @db.Decimal(30, 2)
+  status             TransactionStatus @default(CREATED)
+  riskScore          Int               @default(0)
+  reviewedById       String?
+  approvedAt         DateTime?
+  completedAt        DateTime?
+  failureReason      String?
+  metadata           Json?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  user               User              @relation(fields: [userId], references: [id])
+  bankAccount        BankAccount       @relation(fields: [bankAccountId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Token {
+  id                    String        @id @default(uuid())
+  chain                 String        @default("SOLANA")
+  mint                  String        @unique
+  name                  String
+  symbol                String
+  imageUrl              String?
+  source                String
+  verifiedMetadata      Boolean       @default(false)
+  firstSeenAt           DateTime
+  lastSeenAt            DateTime
+  status                String        @default("WATCHING")
+  riskLevel             String        @default("UNVERIFIED")
+  currentMetrics        Json?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  signals               RunnerSignal[]
+  intelligenceSnapshots TokenIntelligence[]
+  trades                Trade[]
+  positions             Position[]
+  alerts                Alert[]
+  watchlistEntries      WatchlistEntry[]
+  communities           TokenCommunity[]
+}
+
+model RunnerSignal {
+  id                 String   @id @default(uuid())
+  tokenId            String
+  runnerScore        Int
+  category           String
+  holderGrowthScore  Int
+  volumeScore        Int
+  liquidityScore     Int
+  buyPressureScore   Int
+  smartWalletScore   Int
+  socialScore        Int
+  marketCapVelocity  Int
+  whaleScore         Int
+  concentrationRisk Int
+  frequencyScore     Int
+  momentumScore      Int
+  patternScore       Int
+  explanation        String
+  modelVersion       String
+  featureSnapshot    Json
+  observedAt         DateTime @default(now())
+  token              Token    @relation(fields: [tokenId], references: [id])
+
+  @@index([tokenId, observedAt])
+  @@index([runnerScore, observedAt])
+}
+
+model TokenIntelligence {
+  id             String   @id @default(uuid())
+  tokenId        String
+  aiSummary      String
+  riskScore      Int
+  liquidityScore Int
+  communityScore Int
+  momentumScore  Int
+  whaleScore     Int
+  trustScore     Int
+  sentimentScore Int?
+  evidence       Json
+  warnings       Json
+  modelVersion   String
+  createdAt      DateTime @default(now())
+  token          Token    @relation(fields: [tokenId], references: [id])
+
+  @@index([tokenId, createdAt])
+}
+
+model WatchlistEntry {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenId   String
+  createdAt DateTime @default(now())
+  token     Token    @relation(fields: [tokenId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, tokenId])
+}
+
+model Trade {
+  id                    String            @id @default(uuid())
+  userId                String
+  tokenId               String
+  clientOrderId         String            @unique
+  providerOrderId       String?           @unique
+  side                  TradeSide
+  source                String
+  status                TransactionStatus @default(CREATED)
+  amountNgn             Decimal           @db.Decimal(30, 2)
+  tokenQuantity         Decimal           @db.Decimal(38, 18)
+  priceNgn              Decimal           @db.Decimal(30, 10)
+  platformFeeNgn        Decimal           @default(0) @db.Decimal(30, 2)
+  networkFeeNgn         Decimal           @default(0) @db.Decimal(30, 2)
+  slippageNgn           Decimal           @default(0) @db.Decimal(30, 2)
+  realizedPnlNgn        Decimal?          @db.Decimal(30, 2)
+  copiedFromTradeId     String?
+  botDecisionId         String?
+  transactionSignature String?
+  failureReason         String?
+  quoteSnapshot         Json
+  riskSnapshot          Json
+  createdAt             DateTime          @default(now())
+  filledAt              DateTime?
+  user                  User              @relation(fields: [userId], references: [id])
+  token                 Token             @relation(fields: [tokenId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([tokenId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Position {
+  id                String   @id @default(uuid())
+  userId            String
+  tokenId           String
+  quantity          Decimal  @db.Decimal(38, 18)
+  averageEntryNgn   Decimal  @db.Decimal(30, 10)
+  costBasisNgn      Decimal  @db.Decimal(30, 2)
+  realizedPnlNgn    Decimal  @default(0) @db.Decimal(30, 2)
+  highWaterPriceNgn Decimal? @db.Decimal(30, 10)
+  stopPriceNgn      Decimal? @db.Decimal(30, 10)
+  updatedAt         DateTime @updatedAt
+  createdAt         DateTime @default(now())
+  user              User     @relation(fields: [userId], references: [id])
+  token             Token    @relation(fields: [tokenId], references: [id])
+
+  @@unique([userId, tokenId])
+}
+
+model BotSettings {
+  id                    String    @id @default(uuid())
+  userId                String    @unique
+  mode                  BotMode   @default(OFF)
+  riskLevel             RiskLevel @default(SAFE)
+  maxTradeNgn           Decimal   @default(0) @db.Decimal(30, 2)
+  takeProfitPct         Decimal   @default(25) @db.Decimal(8, 2)
+  stopLossPct           Decimal   @default(12) @db.Decimal(8, 2)
+  dailyLossLimitNgn     Decimal   @default(0) @db.Decimal(30, 2)
+  autoBuyRunners        Boolean   @default(false)
+  autoSellProtection    Boolean   @default(true)
+  emergencyStoppedAt    DateTime?
+  consentVersion        String?
+  consentedAt           DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id])
+  decisions             BotDecision[]
+  patternMemories       PatternMemory[]
+}
+
+model BotDecision {
+  id             String   @id @default(uuid())
+  botSettingsId  String
+  tokenMint      String
+  action         String
+  runnerScore    Int
+  riskScore      Int
+  reason         String
+  featureSnapshot Json
+  outcome        String?
+  outcomePnlNgn  Decimal? @db.Decimal(30, 2)
+  createdAt      DateTime @default(now())
+  evaluatedAt    DateTime?
+  settings       BotSettings @relation(fields: [botSettingsId], references: [id])
+
+  @@index([botSettingsId, createdAt])
+}
+
+model PatternMemory {
+  id             String   @id @default(uuid())
+  botSettingsId  String
+  patternKey     String
+  sampleCount    Int      @default(0)
+  winCount       Int      @default(0)
+  lossCount      Int      @default(0)
+  missedRunCount Int      @default(0)
+  expectedReturn Decimal  @default(0) @db.Decimal(12, 6)
+  confidence     Decimal  @default(0) @db.Decimal(8, 6)
+  features       Json
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+  settings       BotSettings @relation(fields: [botSettingsId], references: [id])
+
+  @@unique([botSettingsId, patternKey])
+}
+
+model TraderProfile {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  verified         Boolean  @default(false)
+  copyEnabled      Boolean  @default(false)
+  riskRating       Int      @default(100)
+  roi30dPct        Decimal  @default(0) @db.Decimal(12, 4)
+  winRate30dPct    Decimal  @default(0) @db.Decimal(12, 4)
+  maxDrawdown30dPct Decimal @default(0) @db.Decimal(12, 4)
+  totalProfitNgn   Decimal  @default(0) @db.Decimal(30, 2)
+  followerCount    Int      @default(0)
+  rank             String   @default("ROOKIE")
+  score            Int      @default(0)
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id])
+}
+
+model CopyAllocation {
+  id                  String            @id @default(uuid())
+  followerId          String
+  traderId            String
+  allocationNgn       Decimal           @db.Decimal(30, 2)
+  availableNgn        Decimal           @db.Decimal(30, 2)
+  maxTradePct         Decimal           @default(10) @db.Decimal(8, 2)
+  maxDrawdownPct      Decimal           @default(15) @db.Decimal(8, 2)
+  status              TransactionStatus @default(PENDING)
+  consentedAt         DateTime
+  stoppedAt           DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  follower            User              @relation("CopyFollower", fields: [followerId], references: [id])
+  trader              User              @relation("CopiedTrader", fields: [traderId], references: [id])
+
+  @@unique([followerId, traderId])
+}
+
+model SocialPost {
+  id            String   @id @default(uuid())
+  userId        String
+  body          String
+  mediaUrls     Json?
+  tradeProofId  String?
+  visibility    String   @default("PUBLIC")
+  likeCount     Int      @default(0)
+  commentCount  Int      @default(0)
+  moderation    Json?
+  deletedAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id])
+  comments      SocialComment[]
+  likes         SocialLike[]
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+}
+
+model SocialComment {
+  id        String   @id @default(uuid())
+  postId    String
+  userId    String
+  body      String
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  post      SocialPost @relation(fields: [postId], references: [id])
+  user      User       @relation(fields: [userId], references: [id])
+}
+
+model SocialLike {
+  id        String   @id @default(uuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+  post      SocialPost @relation(fields: [postId], references: [id])
+  user      User       @relation(fields: [userId], references: [id])
+
+  @@unique([postId, userId])
+}
+
+model Follow {
+  id          String   @id @default(uuid())
+  followerId  String
+  followedId  String
+  createdAt   DateTime @default(now())
+  follower    User     @relation("FollowerUser", fields: [followerId], references: [id])
+  followed    User     @relation("FollowedUser", fields: [followedId], references: [id])
+
+  @@unique([followerId, followedId])
+}
+
+model TokenCommunity {
+  id             String   @id @default(uuid())
+  tokenId        String
+  name           String
+  memberCount    Int      @default(0)
+  sentimentScore Int      @default(50)
+  moderationMode String   @default("STANDARD")
+  createdAt      DateTime @default(now())
+  token          Token    @relation(fields: [tokenId], references: [id])
+  messages       CommunityMessage[]
+  polls          CommunityPoll[]
+
+  @@unique([tokenId, name])
+}
+
+model CommunityMessage {
+  id          String   @id @default(uuid())
+  communityId String
+  userId      String
+  body        String
+  sentiment   Int?
+  moderation  Json?
+  deletedAt   DateTime?
+  createdAt   DateTime @default(now())
+  community   TokenCommunity @relation(fields: [communityId], references: [id])
+  user        User           @relation(fields: [userId], references: [id])
+
+  @@index([communityId, createdAt])
+}
+
+model CommunityPoll {
+  id          String   @id @default(uuid())
+  communityId String
+  createdById String
+  question    String
+  options     Json
+  results     Json
+  closesAt    DateTime
+  createdAt   DateTime @default(now())
+  community   TokenCommunity @relation(fields: [communityId], references: [id])
+  createdBy   User           @relation(fields: [createdById], references: [id])
+}
+
+model Achievement {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  name        String
+  description String
+  xp          Int
+  icon        String
+  criteria    Json
+  active      Boolean  @default(true)
+  users       UserAchievement[]
+}
+
+model UserAchievement {
+  id            String      @id @default(uuid())
+  userId        String
+  achievementId String
+  progress      Int         @default(0)
+  earnedAt      DateTime?
+  user          User        @relation(fields: [userId], references: [id])
+  achievement   Achievement @relation(fields: [achievementId], references: [id])
+
+  @@unique([userId, achievementId])
+}
+
+model Subscription {
+  id                   String           @id @default(uuid())
+  userId               String
+  tier                 SubscriptionTier
+  provider             String
+  providerSubscriptionId String?
+  status               String
+  renewsAt             DateTime?
+  expiresAt            DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  user                 User             @relation(fields: [userId], references: [id])
+}
+
+model Alert {
+  id          String   @id @default(uuid())
+  userId      String?
+  tokenId     String?
+  type        String
+  priority    String
+  title       String
+  body        String
+  evidence    Json?
+  readAt      DateTime?
+  deliveredAt DateTime?
+  createdAt   DateTime @default(now())
+  user        User?    @relation(fields: [userId], references: [id])
+  token       Token?   @relation(fields: [tokenId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+model PushToken {
+  id         String   @id @default(uuid())
+  userId     String
+  token      String   @unique
+  platform   String
+  deviceId   String?
+  active     Boolean  @default(true)
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+}
+
+model NotificationPreference {
+  id                String  @id @default(uuid())
+  userId            String  @unique
+  runnerAlerts      Boolean @default(true)
+  whaleAlerts       Boolean @default(true)
+  tradeAlerts       Boolean @default(true)
+  socialAlerts      Boolean @default(true)
+  marketingEmail    Boolean @default(false)
+  marketingPush     Boolean @default(false)
+  quietHours        Json?
+  user              User    @relation(fields: [userId], references: [id])
+}
+
+model Campaign {
+  id              String         @id @default(uuid())
+  name            String
+  channel         CampaignChannel
+  status          CampaignStatus @default(DRAFT)
+  subject         String?
+  body            String
+  templateKey     String?
+  segment         Json
+  scheduledAt     DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  recipientCount  Int            @default(0)
+  deliveredCount  Int            @default(0)
+  failedCount     Int            @default(0)
+  createdById     String
+  approvedById    String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  deliveries      CampaignDelivery[]
+}
+
+model CampaignDelivery {
+  id          String            @id @default(uuid())
+  campaignId  String
+  userId      String
+  providerId  String?
+  status      TransactionStatus @default(PENDING)
+  failureReason String?
+  deliveredAt DateTime?
+  openedAt    DateTime?
+  clickedAt   DateTime?
+  createdAt   DateTime          @default(now())
+  campaign    Campaign          @relation(fields: [campaignId], references: [id])
+  user        User              @relation(fields: [userId], references: [id])
+
+  @@unique([campaignId, userId])
+}
+
+model ProviderConfig {
+  id              String         @id @default(uuid())
+  key             String         @unique
+  displayName     String
+  category        String
+  status          ProviderStatus @default(UNCONFIGURED)
+  secretReference String?
+  maskedHint      String?
+  publicConfig    Json?
+  lastHealthAt    DateTime?
+  lastLatencyMs   Int?
+  lastError       String?
+  updatedById     String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model FeatureFlag {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  enabled     Boolean  @default(false)
+  description String
+  rules       Json?
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+}
+
+model PlatformSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       Json
+  sensitive   Boolean  @default(false)
+  version     Int      @default(1)
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+}
+
+model AdminRole {
+  id          String   @id @default(uuid())
+  userId      String
+  role        String
+  permissions Json
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, role])
+}
+
+model ApprovalRequest {
+  id            String            @id @default(uuid())
+  action        String
+  resourceType  String
+  resourceId    String
+  payload       Json
+  status        TransactionStatus @default(PENDING)
+  requestedById String
+  reviewedById  String?
+  reason        String?
+  expiresAt     DateTime?
+  reviewedAt    DateTime?
+  createdAt     DateTime          @default(now())
+
+  @@index([status, createdAt])
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  actorId      String?
+  actorType    String
+  action       String
+  resourceType String
+  resourceId   String?
+  requestId    String?
+  ipAddress    String?
+  userAgent    String?
+  before       Json?
+  after        Json?
+  metadata     Json?
+  hash         String?
+  createdAt    DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([resourceType, resourceId, createdAt])
+}
+
+model SuspiciousActivityCase {
+  id          String            @id @default(uuid())
+  userId      String?
+  ruleKey     String
+  riskScore   Int
+  status      TransactionStatus @default(REVIEW)
+  evidence    Json
+  assignedToId String?
+  resolution  String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([status, riskScore])
+}
+
+model SystemIncident {
+  id          String   @id @default(uuid())
+  severity    String
+  component   String
+  title       String
+  description String
+  status      String
+  startedAt   DateTime
+  resolvedAt  DateTime?
+  createdById String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+}

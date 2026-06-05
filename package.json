@@ -1,15 +1,29 @@
 {
-  "name": "pumpfun-controlled-sniper-bot",
-  "version": "0.1.0",
-  "description": "Capital-first Pump.fun meme-coin scanner, scorer, paper trader, simulator, and dashboard.",
+  "name": "nairameme-platform",
+  "version": "0.2.0",
+  "description": "Naira-first native meme trading platform with a controlled auto-sniper engine.",
   "type": "module",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
   "scripts": {
     "start": "node src/index.js",
     "scan": "node src/index.js scan",
     "simulate": "node src/index.js simulate data/sample-history.jsonl",
     "history": "node src/history-report.js",
-    "test": "node --test"
+    "test": "node --test test/*.test.js && npm test --workspace @nairameme/api",
+    "mobile": "npm run start --workspace @nairameme/mobile",
+    "mobile:ios": "npm run ios --workspace @nairameme/mobile",
+    "mobile:android": "npm run android --workspace @nairameme/mobile",
+    "api": "npm run dev --workspace @nairameme/api",
+    "admin": "npm run dev --workspace @nairameme/admin",
+    "admin:build": "npm run build --workspace @nairameme/admin",
+    "api:typecheck": "npm run typecheck --workspace @nairameme/api",
+    "mobile:typecheck": "npm run typecheck --workspace @nairameme/mobile",
+    "platform:typecheck": "npm run api:typecheck && npm run mobile:typecheck"
   },
   "engines": {
     "node": ">=22"

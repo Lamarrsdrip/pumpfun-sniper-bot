@@ -1,4 +1,82 @@
-# Pump.fun Sniper Terminal
+# NairaMeme Platform
+
+NairaMeme is a Naira-first native iOS/Android meme-market platform. It combines market intelligence, manual trading, optional Auto Sniper automation, social discovery, communities, risk-adjusted leaderboards, copy-trading foundations, and an admin control plane.
+
+The original Pump.fun scanner remains in `src/` as a migration source and internal paper-testing terminal. It is not the customer mobile application.
+
+## New Platform Structure
+
+```text
+apps/mobile       Expo/React Native iOS and Android app
+apps/admin        Internal operations and admin portal
+services/api      Secure mobile/admin API and provider gates
+packages/contracts Shared validation and API contracts
+prisma            PostgreSQL ledger and platform schema
+docs              Architecture and release requirements
+src               Existing scanner/risk/paper engine
+```
+
+## Install
+
+```bash
+cp .env.example .env
+npm install
+```
+
+## Run Mobile
+
+Start the platform API:
+
+```bash
+npm run api
+```
+
+In another terminal:
+
+```bash
+npm run mobile
+```
+
+Use an Expo development build for native secure storage, push notifications, and production-like testing. `127.0.0.1` only works for an iOS simulator on the same Mac. For a physical phone, set `EXPO_PUBLIC_API_URL` to your Mac's LAN address or a secured development URL.
+
+## Run Admin Portal
+
+```bash
+npm run admin
+```
+
+The portal reads `VITE_API_URL`, defaulting to `http://127.0.0.1:8790`. Development admin routes are local-only. Production requires `ADMIN_API_TOKEN`, an allowed admin origin, and ultimately SSO/OIDC with MFA before staff access.
+
+## Native Build Profiles
+
+The mobile app includes EAS development, preview, and production profiles:
+
+```bash
+cd apps/mobile
+npx eas-cli@latest init
+npx eas-cli@latest build --profile development
+```
+
+Do not submit production builds until the provider, legal, security, privacy, store-asset, and device-test gates in [docs/AUDIT.md](docs/AUDIT.md) are closed.
+
+## Production Gates
+
+The following remain disabled until configured and approved:
+
+- Naira deposits and withdrawals
+- Real token execution
+- Auto Sniper live mode
+- Copy trading
+- Bulk email/push delivery
+
+Provider secrets belong in a secret manager or backend environment. They are never returned to the mobile/admin clients.
+
+Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before implementing provider adapters or enabling money movement.
+Read [docs/AUDIT.md](docs/AUDIT.md) for verified fixes and remaining release blockers.
+
+---
+
+# Legacy Pump.fun Sniper Terminal
 
 Professional paper-first Pump.fun meme-coin sniper MVP. It is built for fast opportunity detection, strict capital protection, explainable entries/exits, and real-market paper testing. It does not promise profit.
 

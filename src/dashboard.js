@@ -69,14 +69,19 @@ export function startDashboard({ config, engine, events }) {
       req.on('close', () => clients.delete(res));
       return;
     }
-    const requested = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
-    const filePath = path.resolve(publicDir, requested);
-    if (!filePath.startsWith(publicDir) || !fs.existsSync(filePath)) {
-      res.writeHead(404);
+    const requested = url.pathname === '/' ? 'index.html' : decodeRequestedPath(url.pathname);
+    if (!requested) {
+      res.writeHead(400, securityHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }));
+      res.end('invalid path');
+      return;
+    }
+    const filePath = resolvePublicFile(publicDir, requested);
+    if (!filePath || !fs.existsSync(filePath)) {
+      res.writeHead(404, securityHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }));
       res.end('not found');
       return;
     }
-    res.writeHead(200, { 'Content-Type': contentType(filePath) });
+    res.writeHead(200, securityHeaders({ 'Content-Type': contentType(filePath) }));
     fs.createReadStream(filePath).pipe(res);
   });
 
@@ -90,6 +95,22 @@ export function startDashboard({ config, engine, events }) {
 
   server.listen(config.port, '127.0.0.1');
   return server;
+}
+
+export function resolvePublicFile(publicDir, requested) {
+  const root = path.resolve(publicDir);
+  const candidate = path.resolve(root, requested);
+  const relative = path.relative(root, candidate);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return relative ? null : candidate;
+  return candidate;
+}
+
+export function decodeRequestedPath(urlPath) {
+  try {
+    return decodeURIComponent(String(urlPath || '').replace(/^\/+/, ''));
+  } catch {
+    return null;
+  }
 }
 
 function stripInternal(value) {
@@ -150,24 +171,45 @@ async function handleJsonAction(req, res, action) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
+    let settled = false;
     req.on('data', (chunk) => {
+      if (settled) return;
       data += chunk;
-      if (data.length > 100_000) reject(new Error('request body too large'));
+      if (data.length > 100_000) {
+        settled = true;
+        reject(new Error('request body too large'));
+      }
     });
     req.on('end', () => {
+      if (settled) return;
       try {
+        settled = true;
         resolve(data ? JSON.parse(data) : {});
       } catch {
+        settled = true;
         reject(new Error('invalid JSON body'));
       }
     });
-    req.on('error', reject);
+    req.on('error', (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
   });
 }
 
 function sendJson(res, body, status = 200) {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.writeHead(status, securityHeaders({ 'Content-Type': 'application/json; charset=utf-8' }));
   res.end(JSON.stringify(body));
+}
+
+function securityHeaders(headers = {}) {
+  return {
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'X-Frame-Options': 'DENY',
+    ...headers
+  };
 }
 
 function contentType(file) {

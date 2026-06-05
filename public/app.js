@@ -375,7 +375,7 @@ function renderIntelligence(intel) {
   els.alphaQueue.innerHTML = queue.slice(0, 8).map((token) => `
     <article class="alpha-card" data-mint="${escapeAttr(token.mint)}">
       <strong><span>${tokenIcon(token)}${tokenName(token)}</span><span class="${scoreClass(token.alphaScore, 80)}">${token.alphaScore}</span></strong>
-      <small>${short(token.mint)} / ${token.status} / score ${token.lastScore?.score || 0}</small>
+      <small>${short(token.mint)} / ${escapeHtml(token.status || 'WATCHING')} / score ${token.lastScore?.score || 0}</small>
       <div class="alpha-meter"><span style="width:${clamp(token.alphaScore, 4, 100)}%"></span></div>
       <div class="alpha-reasons">${escapeHtml((token.opportunityReasons || []).join(' | '))}</div>
     </article>
@@ -506,7 +506,7 @@ function renderTokenDetail(token) {
     </div>
     <div class="reason-box">
       <strong>Execution reasoning</strong>
-      <div>${executionReason(token)}</div>
+      <div>${escapeHtml(executionReason(token))}</div>
       <div class="muted">Estimated slippage cap ${pct(latestState.config.risk.maxSlippagePct)} / liquidity quality ${Math.round(token.liquidityQuality || 0)} / top holder ${pct(token.topHolderPct || 0)}</div>
     </div>`;
   els.tokenDetail.insertAdjacentHTML('beforeend', renderTokenTxFeed(token));
@@ -577,7 +577,7 @@ function renderTokenTxFeed(token) {
   const trades = token.recentTrades || [];
   const rows = trades.slice(-10).reverse().map((trade) => `
     <div class="tx-row">
-      <span class="${trade.side}">${trade.side.toUpperCase()}</span>
+      <span class="${safeClass(trade.side)}">${escapeHtml(String(trade.side || 'unknown').toUpperCase())}</span>
       <span>${escapeHtml(short(trade.wallet || 'wallet'))}</span>
       <strong>${fixed(trade.solAmount)} SOL</strong>
     </div>
@@ -743,16 +743,10 @@ function drawChart(points, positions) {
 }
 
 function drawPlaceholderCurve(ctx, w, h) {
-  ctx.strokeStyle = '#27e7a2';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  for (let i = 0; i < 36; i += 1) {
-    const x = (i / 35) * w;
-    const y = h * 0.55 + Math.sin(i * 0.7) * 10 - i * 0.4;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
+  ctx.fillStyle = '#8ea1ad';
+  ctx.font = '14px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillText('No verified equity history yet', w / 2, h / 2);
 }
 
 function drawMiniChart(canvas, token) {
@@ -765,28 +759,12 @@ function drawMiniChart(canvas, token) {
     drawCandles(ctx, token.candles, w, h);
     return;
   }
-  ctx.strokeStyle = '#20323c';
-  for (let i = 1; i < 4; i += 1) {
-    ctx.beginPath();
-    ctx.moveTo(0, (h / 4) * i);
-    ctx.lineTo(w, (h / 4) * i);
-    ctx.stroke();
-  }
-  ctx.strokeStyle = token.status === 'BLOCKED' ? '#ff5166' : '#27e7a2';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  const score = token.lastScore?.score || 35;
-  for (let i = 0; i < 28; i += 1) {
-    const x = (i / 27) * w;
-    const y = h - 18 - (score / 100) * (h - 34) + Math.sin(i * 0.75 + token.ageMs / 8000) * 13;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-  ctx.fillStyle = 'rgba(39,231,162,0.08)';
-  ctx.fillRect(w * 0.58, 0, w * 0.18, h);
-  ctx.fillStyle = 'rgba(255,81,102,0.08)';
-  ctx.fillRect(0, h * 0.72, w, h * 0.28);
+  ctx.fillStyle = '#071015';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#8ea1ad';
+  ctx.font = '14px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillText('No verified live candles', w / 2, h / 2);
 }
 
 function drawCandles(ctx, candles, w, h) {
