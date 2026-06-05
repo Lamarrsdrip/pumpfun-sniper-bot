@@ -13,7 +13,7 @@ export default function DiscoverScreen() {
   return (
     <View style={styles.root}>
       <View style={styles.filters}>{['Early runners', 'Trending', 'New', 'Volume'].map((item, index) => <Text key={item} style={[styles.filter, index === 0 && styles.active]}>{item}</Text>)}</View>
-      <FlatList data={tokens} keyExtractor={(item) => item.mint} contentContainerStyle={styles.list}
+      <FlatList data={tokens} keyExtractor={(item) => item.mint}
         ListEmptyComponent={<EmptyState loading={loading} title={loading ? 'Scanning live markets' : 'No verified market data'} body="Tokens appear only when a configured source supplies real metadata and prices." />}
         renderItem={({ item }) => (
           <Pressable style={styles.row} onPress={() => router.push(`/token/${item.mint}`)}>
@@ -26,7 +26,7 @@ export default function DiscoverScreen() {
 }
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: dark.background }, filters: { flexDirection: 'row', gap: 8, padding: spacing.md }, filter: { color: dark.muted, backgroundColor: dark.surface, borderRadius: 6, paddingVertical: 8, paddingHorizontal: 11, fontWeight: '700' }, active: { color: dark.green, borderWidth: 1, borderColor: dark.green },
-  list: { paddingHorizontal: spacing.md, paddingBottom: 32, flexGrow: 1 }, row: { minHeight: 72, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: dark.border },
+  row: { minHeight: 72, marginHorizontal: spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: dark.border },
   ident: { flexDirection: 'row', alignItems: 'center', gap: 11, flex: 1 }, avatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: dark.greenSoft, alignItems: 'center', justifyContent: 'center' }, avatarText: { color: dark.green, fontWeight: '900' },
   name: { color: dark.text, fontWeight: '800' }, meta: { color: dark.muted, fontSize: 12, marginTop: 3 }, right: { alignItems: 'flex-end' }, score: { color: dark.green, fontWeight: '900' }, price: { color: dark.muted, fontSize: 11, marginTop: 3 }
 });
