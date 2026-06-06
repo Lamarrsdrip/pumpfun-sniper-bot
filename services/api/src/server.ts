@@ -10,6 +10,11 @@ import { issueSession, resolveSession } from './domain/auth.js';
 import { accountBalanceMinor, ensureSufficientBalance, postLedgerTransaction, userWalletBalanceMinor } from './domain/ledger.js';
 import { seedDemoData } from './domain/seed.js';
 import { createMemoryStore, type MemoryStore } from './domain/store.js';
+import {
+  createEncryptedProviderVault,
+  type ProviderCredentials,
+  type ProviderVault
+} from './domain/provider-vault.js';
 import type { AuditEvent, Mode, MoneyRequest, ProviderConfig, Trade, User } from './domain/types.js';
 
 type AppOptions = {
@@ -17,16 +22,70 @@ type AppOptions = {
   adminApiToken?: string;
   adminOrigins?: string[];
   store?: MemoryStore;
+  providerVault?: ProviderVault;
 };
 
 const money = z.coerce.number().positive().max(100_000_000);
+
+type CampaignRecord = z.infer<typeof CampaignSchema> & {
+  id: string;
+  mode: Mode;
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'SCHEDULED' | 'SENT' | 'FAILED';
+  audience: string;
+  scheduledAt?: string;
+  createdAt: string;
+  delivery?: { attempted: number; delivered: number; failed: number };
+};
+
+type IncidentRecord = {
+  id: string;
+  mode: Mode;
+  title: string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  status: 'OPEN' | 'INVESTIGATING' | 'RESOLVED';
+  notes: string[];
+  affectedRecords: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+type OperationsSettings = {
+  swapFeePercent: number;
+  botFeePercent: number;
+  withdrawalFeePercent: number;
+  minimumDepositNgn: number;
+  maximumWithdrawalNgn: number;
+  dailyUserLimitNgn: number;
+  proMonthlyNgn: number;
+  eliteMonthlyNgn: number;
+};
 
 export async function buildApp(options: AppOptions = {}) {
   const environment = options.environment ?? config.environment;
   const adminApiToken = options.adminApiToken ?? config.adminApiToken;
   const adminOrigins = options.adminOrigins ?? config.adminOrigins;
   const store = options.store ?? createMemoryStore(environment === 'production' ? emptyState() : seedDemoData());
+  const providerVault = options.providerVault ?? (
+    config.providerVaultKey
+      ? createEncryptedProviderVault(config.providerVaultPath, config.providerVaultKey)
+      : undefined
+  );
+  if (providerVault) {
+    for (const key of await providerVault.keys()) {
+      const base = defaultProviders().find((item) => item.key === key);
+      if (base) store.saveProvider({ ...base, configured: true, status: 'DEGRADED' });
+    }
+  }
   const botSettings = new Map<string, { active: boolean; riskLevel: string; maxTradeNgn: number; takeProfitPercent: number; stopLossPercent: number; dailyLossLimitPercent: number }>();
+  const campaigns = new Map<string, CampaignRecord>();
+  const incidents = new Map<string, IncidentRecord>();
+  const operationsSettings = new Map<Mode, OperationsSettings>([
+    ['DEMO', defaultOperationsSettings()],
+    ['LIVE', defaultOperationsSettings()]
+  ]);
+  const systemControls = new Map<string, { paused: boolean; status: string; updatedAt: string }>();
+  const tokenModeration = new Map<string, { classification: 'DEFAULT' | 'SAFE' | 'RISKY'; hidden: boolean; featured: boolean; updatedAt: string }>();
+  const copyProfiles = new Map<string, { enabled: boolean; riskRating: 'LOW' | 'MEDIUM' | 'HIGH'; reviewedAt?: string }>();
   const app = Fastify({ logger: false, requestIdHeader: 'x-request-id' });
   await app.register(cors, {
     origin(origin, callback) {
@@ -39,9 +98,14 @@ export async function buildApp(options: AppOptions = {}) {
 
   app.addHook('preHandler', async (request, reply) => {
     if (!request.url.startsWith('/v1/admin') || environment !== 'production') return;
-    if (!adminApiToken) return reply.status(503).send({ code: 'ADMIN_AUTH_NOT_CONFIGURED', message: 'Admin authentication is not configured.' });
     const supplied = request.headers.authorization?.replace(/^Bearer\s+/i, '') || '';
-    if (!safeTokenEqual(supplied, adminApiToken)) return reply.status(401).send({ code: 'ADMIN_UNAUTHORIZED', message: 'A valid admin authorization token is required.' });
+    const sessionUser = supplied ? resolveSession(store, supplied) : undefined;
+    const roleAllowed = sessionUser ? sessionUser.role !== 'USER' : false;
+    const serviceTokenAllowed = Boolean(adminApiToken) && safeTokenEqual(supplied, adminApiToken);
+    if (!roleAllowed && !serviceTokenAllowed) {
+      if (!adminApiToken && !sessionUser) return reply.status(503).send({ code: 'ADMIN_AUTH_NOT_CONFIGURED', message: 'Admin authentication is not configured.' });
+      return reply.status(401).send({ code: 'ADMIN_UNAUTHORIZED', message: 'An administrator session is required.' });
+    }
   });
 
   app.setErrorHandler((error, request, reply) => {
@@ -64,6 +128,10 @@ export async function buildApp(options: AppOptions = {}) {
     const user = store.getUser(body.userId);
     if (!user || user.mode !== 'DEMO') return reply.status(404).send({ code: 'DEMO_USER_NOT_FOUND', message: 'Demo user not found.' });
     return { ...issueSession(store, user.id), user };
+  });
+  app.get('/v1/me', async (request) => {
+    const context = requestContext(request, store);
+    return { user: context.user, mode: context.mode, isAdmin: context.user.role !== 'USER' };
   });
   app.post('/v1/auth/start', async (request, reply) => {
     z.object({ identifier: z.string().trim().min(5).max(254) }).parse(request.body);
@@ -231,7 +299,13 @@ export async function buildApp(options: AppOptions = {}) {
         tradingVolumeNgn: fromMinor(trades.reduce((sum, item) => sum + BigInt(item.amountMinor), 0n)),
         revenueTodayNgn: fromMinor(trades.reduce((sum, item) => sum + BigInt(item.feeMinor), 0n))
       },
-      operations: { openRiskCases: 0, pendingApprovals: requests.filter((item) => item.status === 'PENDING').length + users.filter((item) => item.kycStatus === 'PENDING_REVIEW').length, activeIncidents: 0 },
+      operations: {
+        openRiskCases: store.listTokens(mode).filter((item) => item.riskScore >= 70).length,
+        pendingApprovals: requests.filter((item) => item.status === 'PENDING').length
+          + users.filter((item) => item.kycStatus === 'PENDING_REVIEW').length
+          + [...campaigns.values()].filter((item) => item.mode === mode && item.status === 'PENDING_APPROVAL').length,
+        activeIncidents: [...incidents.values()].filter((item) => item.mode === mode && item.status !== 'RESOLVED').length
+      },
       providers: providerStateMap(store),
       features: config.flags
     };
@@ -290,7 +364,22 @@ export async function buildApp(options: AppOptions = {}) {
     return { request: updated };
   });
   app.get('/v1/admin/trades', async (request) => ({ trades: store.listTrades({ mode: adminMode(request) }) }));
-  app.get('/v1/admin/tokens', async (request) => ({ tokens: store.listTokens(adminMode(request)) }));
+  app.get('/v1/admin/tokens', async (request) => ({
+    tokens: store.listTokens(adminMode(request)).map((token) => ({
+      ...token,
+      moderation: tokenModeration.get(token.id) || { classification: 'DEFAULT', hidden: false, featured: false }
+    }))
+  }));
+  app.patch('/v1/admin/tokens/:id', async (request, reply) => {
+    const token = store.listTokens(adminMode(request)).find((item) => item.id === (request.params as { id: string }).id);
+    if (!token) return reply.status(404).send({ code: 'TOKEN_NOT_FOUND', message: 'Token not found.' });
+    const body = z.object({ classification: z.enum(['DEFAULT', 'SAFE', 'RISKY']).optional(), hidden: z.boolean().optional(), featured: z.boolean().optional(), reason: z.string().min(3).max(500) }).parse(request.body);
+    const current = tokenModeration.get(token.id) || { classification: 'DEFAULT' as const, hidden: false, featured: false, updatedAt: new Date().toISOString() };
+    const updated = { ...current, classification: body.classification ?? current.classification, hidden: body.hidden ?? current.hidden, featured: body.featured ?? current.featured, updatedAt: new Date().toISOString() };
+    tokenModeration.set(token.id, updated);
+    audit(store, request, 'TOKEN_MODERATION_UPDATED', 'TOKEN', token.id, body.reason, current, updated);
+    return { token, moderation: updated };
+  });
   app.get('/v1/admin/audit', async () => ({ events: store.listAudit() }));
   app.get('/v1/admin/ai/settings', async () => aiBudgetStatus());
   app.get('/v1/admin/providers', async () => Object.values(providerStateMap(store)));
@@ -299,7 +388,7 @@ export async function buildApp(options: AppOptions = {}) {
     const current = store.getProvider(key) || defaultProviders().find((item) => item.key === key);
     if (!current) return reply.status(404).send({ code: 'UNKNOWN_PROVIDER', message: 'Unknown provider.' });
     const body = z.object({ enabled: z.boolean().optional(), priority: z.number().int().min(1).max(100).optional(), publicConfig: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(), reason: z.string().min(3) }).parse(request.body);
-    const updated = store.saveProvider({ ...current, enabled: body.enabled ?? current.enabled, priority: body.priority ?? current.priority, publicConfig: body.publicConfig ?? current.publicConfig, status: body.enabled === false ? 'DISABLED' : current.configured ? 'CONNECTED' : 'UNCONFIGURED' });
+    const updated = store.saveProvider({ ...current, enabled: body.enabled ?? current.enabled, priority: body.priority ?? current.priority, publicConfig: body.publicConfig ?? current.publicConfig, status: body.enabled === false ? 'DISABLED' : current.configured ? (current.status === 'CONNECTED' ? 'CONNECTED' : 'DEGRADED') : 'UNCONFIGURED' });
     audit(store, request, 'PROVIDER_UPDATED', 'PROVIDER', key, body.reason, current, updated);
     return { provider: updated };
   });
@@ -307,25 +396,179 @@ export async function buildApp(options: AppOptions = {}) {
     const key = z.string().parse((request.params as { key: string }).key);
     const provider = providerStateMap(store)[key];
     if (!provider) return reply.status(404).send({ code: 'UNKNOWN_PROVIDER', message: 'Unknown provider.' });
-    return { ...provider, testedAt: new Date().toISOString(), message: provider.configured ? 'Configuration is present. Network health checks run only in the deployed backend.' : 'Required credentials are missing.' };
+    if (!providerVault || !(await providerVault.has(key))) {
+      return reply.status(409).send({ code: 'PROVIDER_CREDENTIALS_MISSING', message: 'Save the required credentials before testing this provider.' });
+    }
+    const credentials = await providerVault.get(key);
+    const missing = (provider.requiredFields || []).filter((field) => !credentials?.[field]?.trim());
+    if (missing.length) {
+      return reply.status(422).send({ code: 'PROVIDER_FIELDS_MISSING', message: `Missing required fields: ${missing.join(', ')}.` });
+    }
+    const updated = store.saveProvider({
+      ...provider,
+      configured: true,
+      status: 'DEGRADED',
+      lastTestedAt: new Date().toISOString(),
+      lastError: 'Credential validation passed; provider network adapter test is required.'
+    });
+    audit(store, request, 'PROVIDER_TESTED', 'PROVIDER', key, 'Credential structure validated', provider, updated);
+    return { ...updated, testedAt: updated.lastTestedAt, message: 'Credentials decrypted and validated. Network adapter test remains required before Connected status.' };
   });
   app.post('/v1/admin/providers/:key/configure', async (request, reply) => {
     const key = z.string().parse((request.params as { key: string }).key);
-    const known = key in providerStateMap(store) || ['payments', 'identity', 'marketData', 'solanaRpc', 'kyc', 'email', 'push', 'trading', 'ai'].includes(key);
-    if (!known) return reply.status(404).send({ code: 'UNKNOWN_PROVIDER', message: 'Unknown provider.' });
-    z.object({ secret: z.string().min(8).max(10_000), publicConfig: z.record(z.string(), z.unknown()).default({}) }).parse(request.body);
-    if (!config.secretManager) return reply.status(503).send({ code: 'SECRET_MANAGER_NOT_CONFIGURED', message: 'Configure a server-side secret manager before storing provider credentials.' });
-    return reply.status(501).send({ code: 'SECRET_MANAGER_ADAPTER_PENDING', message: 'The secret manager is selected, but its audited storage adapter is not enabled.' });
+    const current = providerStateMap(store)[key];
+    if (!current) return reply.status(404).send({ code: 'UNKNOWN_PROVIDER', message: 'Unknown provider.' });
+    const body = z.object({
+      credentials: z.record(z.string(), z.string().max(20_000)),
+      publicConfig: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({})
+    }).parse(request.body);
+    if (!providerVault) {
+      return reply.status(503).send({
+        code: 'CREDENTIAL_VAULT_NOT_CONFIGURED',
+        message: 'Set FIELD_ENCRYPTION_KEY on the API server before saving provider credentials.'
+      });
+    }
+    const missing = (current.requiredFields || []).filter((field) => !body.credentials[field]?.trim());
+    if (missing.length) return reply.status(422).send({ code: 'PROVIDER_FIELDS_MISSING', message: `Complete: ${missing.join(', ')}.` });
+    await providerVault.set(key, body.credentials as ProviderCredentials);
+    const updated = store.saveProvider({
+      ...current,
+      configured: true,
+      status: 'DEGRADED',
+      publicConfig: body.publicConfig,
+      lastError: 'Saved securely; run provider test.'
+    });
+    audit(store, request, 'PROVIDER_CREDENTIALS_SAVED', 'PROVIDER', key, 'Encrypted credentials updated', { configured: current.configured }, { configured: true });
+    return reply.status(201).send({ provider: { ...updated, secret: 'configured (masked)' }, message: 'Credentials encrypted and saved. Run Test connection next.' });
   });
+  app.get('/v1/admin/campaigns', async (request) => ({
+    campaigns: [...campaigns.values()].filter((item) => item.mode === adminMode(request)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  }));
   app.post('/v1/admin/campaigns', async (request, reply) => {
-    const campaign = CampaignSchema.parse(request.body);
-    if (campaign.channel === 'EMAIL' && !config.providers.email) return reply.status(409).send({ code: 'EMAIL_PROVIDER_MISSING', message: 'Configure the email provider before approving this campaign.' });
-    return reply.status(201).send({ id: randomUUID(), status: 'PENDING_APPROVAL', ...campaign, createdAt: new Date().toISOString(), note: 'Campaigns require recipient consent filtering and second-admin approval before send.' });
+    const body = CampaignRequestSchema.parse(request.body);
+    const record: CampaignRecord = {
+      id: `campaign_${randomUUID()}`,
+      mode: adminMode(request),
+      status: body.submitForApproval ? 'PENDING_APPROVAL' : 'DRAFT',
+      name: body.name,
+      channel: body.channel,
+      subject: body.subject,
+      body: body.body,
+      segment: body.segment,
+      audience: body.audience,
+      scheduledAt: body.scheduledAt,
+      createdAt: new Date().toISOString()
+    };
+    campaigns.set(record.id, record);
+    audit(store, request, 'CAMPAIGN_CREATED', 'CAMPAIGN', record.id, `Created ${record.status.toLowerCase()} campaign`, undefined, record);
+    return reply.status(201).send({ campaign: record });
+  });
+  app.post('/v1/admin/campaigns/:id/approve', async (request, reply) => {
+    const current = campaigns.get((request.params as { id: string }).id);
+    if (!current) return reply.status(404).send({ code: 'CAMPAIGN_NOT_FOUND', message: 'Campaign not found.' });
+    if (current.channel === 'EMAIL' && !providerFamilyReady(store, 'email')) return reply.status(409).send({ code: 'EMAIL_PROVIDER_MISSING', message: 'Configure and test an email provider before approval.' });
+    if (current.channel === 'PUSH' && !providerFamilyReady(store, 'push')) return reply.status(409).send({ code: 'PUSH_PROVIDER_MISSING', message: 'Configure and test a push provider before approval.' });
+    const updated: CampaignRecord = { ...current, status: current.scheduledAt ? 'SCHEDULED' : 'APPROVED' };
+    campaigns.set(updated.id, updated);
+    audit(store, request, 'CAMPAIGN_APPROVED', 'CAMPAIGN', updated.id, 'Campaign approved for delivery', current, updated);
+    return { campaign: updated };
+  });
+  app.get('/v1/admin/settings', async (request) => {
+    const mode = adminMode(request);
+    return { mode, settings: operationsSettings.get(mode) };
+  });
+  app.put('/v1/admin/settings', async (request) => {
+    const mode = adminMode(request);
+    const current = operationsSettings.get(mode)!;
+    const updated = OperationsSettingsSchema.parse(request.body);
+    operationsSettings.set(mode, updated);
+    audit(store, request, 'OPERATIONS_SETTINGS_UPDATED', 'SETTINGS', mode, 'Fees and limits updated', current, updated);
+    return { mode, settings: updated };
+  });
+  app.get('/v1/admin/incidents', async (request) => ({
+    incidents: [...incidents.values()].filter((item) => item.mode === adminMode(request)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  }));
+  app.post('/v1/admin/incidents', async (request, reply) => {
+    const body = IncidentCreateSchema.parse(request.body);
+    const now = new Date().toISOString();
+    const incident: IncidentRecord = { id: `incident_${randomUUID()}`, mode: adminMode(request), title: body.title, severity: body.severity, status: 'OPEN', notes: body.note ? [body.note] : [], affectedRecords: body.affectedRecords, createdAt: now, updatedAt: now };
+    incidents.set(incident.id, incident);
+    audit(store, request, 'INCIDENT_CREATED', 'INCIDENT', incident.id, body.note || incident.title, undefined, incident);
+    return reply.status(201).send({ incident });
+  });
+  app.patch('/v1/admin/incidents/:id', async (request, reply) => {
+    const current = incidents.get((request.params as { id: string }).id);
+    if (!current) return reply.status(404).send({ code: 'INCIDENT_NOT_FOUND', message: 'Incident not found.' });
+    const body = z.object({ status: z.enum(['OPEN', 'INVESTIGATING', 'RESOLVED']).optional(), note: z.string().min(2).max(1000).optional() }).parse(request.body);
+    const updated: IncidentRecord = { ...current, status: body.status || current.status, notes: body.note ? [...current.notes, body.note] : current.notes, updatedAt: new Date().toISOString() };
+    incidents.set(updated.id, updated);
+    audit(store, request, 'INCIDENT_UPDATED', 'INCIDENT', updated.id, body.note || `Status changed to ${updated.status}`, current, updated);
+    return { incident: updated };
+  });
+  app.get('/v1/admin/bounties', async (request) => ({ bounties: store.listBounties(adminMode(request)) }));
+  app.post('/v1/admin/bounties', async (request, reply) => {
+    const mode = adminMode(request);
+    const body = z.object({ title: z.string().min(4).max(180), sponsor: z.string().min(2).max(120), rewardNgn: money, category: z.string().min(2).max(80), deadline: z.string().datetime() }).parse(request.body);
+    const bounty = { id: `bounty_${randomUUID()}`, mode, title: body.title, sponsor: body.sponsor, rewardNgn: body.rewardNgn.toFixed(2), category: body.category, deadline: body.deadline, status: 'OPEN' as const };
+    store.saveBounty(bounty);
+    audit(store, request, 'BOUNTY_CREATED', 'BOUNTY', bounty.id, 'Funded bounty created', undefined, bounty);
+    return reply.status(201).send({ bounty });
+  });
+  app.get('/v1/admin/bot-controls', async (request) => ({
+    mode: adminMode(request),
+    users: store.listUsers({ mode: adminMode(request) }).map((user) => ({ userId: user.id, name: user.name, settings: botSettings.get(user.id) || null }))
+  }));
+  app.patch('/v1/admin/bot-controls/:userId', async (request, reply) => {
+    const user = store.getUser((request.params as { userId: string }).userId);
+    if (!user) return reply.status(404).send({ code: 'USER_NOT_FOUND', message: 'User not found.' });
+    const current = botSettings.get(user.id) || { active: false, riskLevel: 'BALANCED', maxTradeNgn: 10000, takeProfitPercent: 30, stopLossPercent: 12, dailyLossLimitPercent: 5 };
+    const body = z.object({ active: z.boolean() }).parse(request.body);
+    const updated = { ...current, active: body.active };
+    botSettings.set(user.id, updated);
+    audit(store, request, 'BOT_CONTROL_UPDATED', 'USER', user.id, body.active ? 'Bot enabled by admin' : 'Bot stopped by admin', current, updated);
+    return { userId: user.id, settings: updated };
+  });
+  app.get('/v1/admin/copy-traders', async (request) => {
+    const mode = adminMode(request);
+    const trades = store.listTrades({ mode });
+    return {
+      traders: store.listUsers({ mode }).map((user) => {
+        const profile = copyProfiles.get(user.id) || { enabled: false, riskRating: 'MEDIUM' as const };
+        const userTrades = trades.filter((trade) => trade.userId === user.id);
+        const confirmed = userTrades.filter((trade) => trade.status === 'CONFIRMED');
+        return {
+          userId: user.id,
+          name: user.name,
+          enabled: profile.enabled,
+          riskRating: profile.riskRating,
+          trades: userTrades.length,
+          winRate: confirmed.length ? 100 : 0,
+          copiedVolumeNgn: '0.00',
+          reviewedAt: profile.reviewedAt
+        };
+      })
+    };
+  });
+  app.patch('/v1/admin/copy-traders/:userId', async (request, reply) => {
+    const user = store.getUser((request.params as { userId: string }).userId);
+    if (!user) return reply.status(404).send({ code: 'USER_NOT_FOUND', message: 'User not found.' });
+    const body = z.object({ enabled: z.boolean(), riskRating: z.enum(['LOW', 'MEDIUM', 'HIGH']), reason: z.string().min(3).max(500) }).parse(request.body);
+    const current = copyProfiles.get(user.id) || { enabled: false, riskRating: 'MEDIUM' as const };
+    const updated = { enabled: body.enabled, riskRating: body.riskRating, reviewedAt: new Date().toISOString() };
+    copyProfiles.set(user.id, updated);
+    audit(store, request, 'COPY_PROFILE_UPDATED', 'USER', user.id, body.reason, current, updated);
+    return { userId: user.id, profile: updated };
   });
   app.post('/v1/admin/emergency/:component/pause', async (request, reply) => {
     const component = (request.params as { component: string }).component;
-    audit(store, request, 'EMERGENCY_PAUSE_REQUESTED', 'SYSTEM', component, 'Emergency pause requested', undefined, { status: 'PENDING_APPROVAL' });
-    return reply.status(202).send({ component, paused: false, status: 'PENDING_APPROVAL', approvalRequired: true, recordedAt: new Date().toISOString() });
+    const mode = adminMode(request);
+    const now = new Date().toISOString();
+    const control = mode === 'DEMO'
+      ? { paused: true, status: 'ACTIVE', updatedAt: now }
+      : { paused: false, status: 'PENDING_SECOND_ADMIN', updatedAt: now };
+    systemControls.set(`${mode}:${component}`, control);
+    audit(store, request, 'EMERGENCY_PAUSE_REQUESTED', 'SYSTEM', component, 'Emergency pause requested', undefined, control);
+    return reply.status(202).send({ component, ...control, approvalRequired: mode === 'LIVE' });
   });
 
   return app;
@@ -338,6 +581,47 @@ const CampaignSchema = z.object({
   body: z.string().min(1).max(20_000),
   segment: z.object({ subscriptionTier: z.array(z.enum(['FREE', 'PRO', 'ELITE'])).optional(), kycStatus: z.array(z.string()).optional(), marketingConsentRequired: z.boolean().default(true) })
 });
+
+const CampaignRequestSchema = CampaignSchema.extend({
+  audience: z.enum(['ALL', 'KYC_APPROVED', 'INACTIVE', 'BOUNTY_USERS', 'TRADERS']).default('ALL'),
+  scheduledAt: z.string().datetime().optional(),
+  submitForApproval: z.boolean().default(false)
+});
+
+const OperationsSettingsSchema = z.object({
+  swapFeePercent: z.number().min(0).max(10),
+  botFeePercent: z.number().min(0).max(25),
+  withdrawalFeePercent: z.number().min(0).max(10),
+  minimumDepositNgn: z.number().min(100).max(10_000_000),
+  maximumWithdrawalNgn: z.number().min(1000).max(1_000_000_000),
+  dailyUserLimitNgn: z.number().min(1000).max(1_000_000_000),
+  proMonthlyNgn: z.number().min(0).max(10_000_000),
+  eliteMonthlyNgn: z.number().min(0).max(10_000_000)
+});
+
+const IncidentCreateSchema = z.object({
+  title: z.string().min(4).max(180),
+  severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
+  note: z.string().max(1000).optional(),
+  affectedRecords: z.array(z.string().max(160)).max(100).default([])
+});
+
+function defaultOperationsSettings(): OperationsSettings {
+  return {
+    swapFeePercent: 1,
+    botFeePercent: 5,
+    withdrawalFeePercent: 0.5,
+    minimumDepositNgn: 1000,
+    maximumWithdrawalNgn: 5_000_000,
+    dailyUserLimitNgn: 10_000_000,
+    proMonthlyNgn: 7500,
+    eliteMonthlyNgn: 25000
+  };
+}
+
+function providerFamilyReady(store: MemoryStore, family: string) {
+  return store.listProviders().some((provider) => provider.family === family && provider.enabled && provider.status === 'CONNECTED');
+}
 
 function requestContext(request: FastifyRequest, store: MemoryStore) {
   return optionalContext(request, store) || { mode: 'DEMO' as Mode, user: store.getUser('demo-user-ada')! };
@@ -414,26 +698,38 @@ function providerStateMap(store: MemoryStore): Record<string, ProviderConfig & {
 
 function defaultProviders(): ProviderConfig[] {
   return [
-    provider('monnify', 'payments', 'Monnify', 1, 'https://app.monnify.com/', ['API key', 'Secret key', 'Contract code']),
-    provider('paystack', 'payments', 'Paystack', 2, 'https://dashboard.paystack.com/', ['Secret key', 'Public key']),
-    provider('flutterwave', 'payments', 'Flutterwave', 3, 'https://app.flutterwave.com/', ['Secret key', 'Public key', 'Encryption key']),
+    provider('monnify', 'payments', 'Monnify', 1, 'https://app.monnify.com/', ['API Key', 'Secret Key', 'Contract Code', 'Base URL', 'Webhook Secret']),
+    provider('paystack', 'payments', 'Paystack', 2, 'https://dashboard.paystack.com/', ['Secret Key', 'Public Key', 'Webhook Secret', 'Base URL']),
+    provider('flutterwave', 'payments', 'Flutterwave', 3, 'https://app.flutterwave.com/', ['Secret Key', 'Public Key', 'Encryption Key', 'Webhook Secret', 'Base URL']),
     provider('supabase', 'identity', 'Supabase Auth', 1, 'https://supabase.com/dashboard', ['Project URL', 'Anon key', 'Service role secret']),
-    provider('dojah', 'kyc', 'Dojah', 1, 'https://app.dojah.io/', ['App ID', 'Private key']),
+    provider('dojah', 'kyc', 'Dojah', 1, 'https://app.dojah.io/', ['App ID', 'Secret Key', 'Base URL']),
+    provider('smileid', 'kyc', 'Smile ID', 2, 'https://portal.smileidentity.com/', ['Partner ID', 'API Key', 'Callback URL']),
+    provider('prembly', 'kyc', 'Prembly', 3, 'https://prembly.com/', ['API Key', 'App ID', 'Webhook Secret']),
     provider('termii', 'identity', 'Termii OTP', 2, 'https://accounts.termii.com/', ['API key', 'Sender ID']),
     provider('sendchamp', 'identity', 'Sendchamp OTP', 3, 'https://my.sendchamp.com/', ['Public key', 'Sender ID']),
-    provider('helius', 'marketData', 'Helius', 1, 'https://dashboard.helius.dev/', ['API key', 'RPC URL']),
-    provider('pumpportal', 'marketData', 'PumpPortal', 2, 'https://pumpportal.fun/', ['API key']),
-    provider('birdeye', 'marketData', 'Birdeye', 3, 'https://bds.birdeye.so/', ['API key']),
-    provider('dexscreener', 'marketData', 'DexScreener', 4, 'https://dexscreener.com/', []),
-    provider('jupiter', 'trading', 'Jupiter', 1, 'https://portal.jup.ag/', ['API key']),
+    provider('helius', 'marketData', 'Helius', 1, 'https://dashboard.helius.dev/', ['RPC URL', 'API Key', 'Webhook Secret']),
+    provider('quicknode', 'marketData', 'QuickNode', 2, 'https://dashboard.quicknode.com/', ['RPC URL', 'API Key', 'Webhook Secret']),
+    provider('alchemy', 'marketData', 'Alchemy', 3, 'https://dashboard.alchemy.com/', ['RPC URL', 'API Key', 'Webhook Secret']),
+    provider('pumpportal', 'marketData', 'PumpPortal', 4, 'https://pumpportal.fun/', ['API URL', 'API Key']),
+    provider('birdeye', 'marketData', 'Birdeye', 5, 'https://bds.birdeye.so/', ['API URL', 'API Key']),
+    provider('dexscreener', 'marketData', 'DexScreener', 6, 'https://dexscreener.com/', ['API URL']),
+    provider('jupiter', 'trading', 'Jupiter', 1, 'https://portal.jup.ag/', ['Quote API URL', 'Swap API URL', 'API Key', 'Max Slippage', 'Priority Fee']),
     provider('pumpswap', 'trading', 'PumpSwap', 2, 'https://pump.fun/', ['Execution adapter credentials']),
-    provider('resend', 'email', 'Resend', 1, 'https://resend.com/api-keys', ['API key', 'Verified domain']),
+    provider('resend', 'email', 'Resend', 1, 'https://resend.com/api-keys', ['API Key', 'Sender Email', 'Verified Domain']),
+    provider('sendgrid', 'email', 'SendGrid', 2, 'https://app.sendgrid.com/settings/api_keys', ['API Key', 'Sender Email', 'Verified Domain']),
     provider('ses', 'email', 'Amazon SES', 2, 'https://console.aws.amazon.com/ses/', ['Access key', 'Secret key', 'Region']),
     provider('google', 'email', 'Google Workspace', 3, 'https://admin.google.com/', ['SMTP relay host', 'Username', 'App password']),
-    provider('expo', 'push', 'Expo Push', 1, 'https://expo.dev/accounts', ['Access token']),
-    provider('firebase', 'push', 'Firebase Cloud Messaging', 2, 'https://console.firebase.google.com/', ['Service account']),
+    provider('expo', 'push', 'Expo Push', 1, 'https://expo.dev/accounts', ['Project ID', 'Access Token']),
+    provider('firebase', 'push', 'Firebase Cloud Messaging', 2, 'https://console.firebase.google.com/', ['Project ID', 'Service Account Credentials']),
     provider('apns', 'push', 'Apple Push Notifications', 3, 'https://developer.apple.com/account/resources/authkeys/list', ['Key ID', 'Team ID', 'APNs key']),
-    provider('emergent', 'ai', 'Emergent Universal LLM', 1, 'https://app.emergent.sh/', ['Universal API key', 'Base URL', 'Default model'])
+    provider('emergent', 'ai', 'Emergent Universal LLM', 1, 'https://app.emergent.sh/', ['Provider Name', 'Base URL', 'API Key', 'Model', 'Monthly Budget Limit']),
+    provider('turnkey', 'custody', 'Turnkey', 1, 'https://app.turnkey.com/', ['Organization ID', 'API Public Key', 'API Private Key']),
+    provider('trmlabs', 'transactionRisk', 'TRM Labs', 1, 'https://www.trmlabs.com/contact', ['API URL', 'API Key']),
+    provider('chainalysis', 'transactionRisk', 'Chainalysis', 2, 'https://www.chainalysis.com/contact/', ['API URL', 'API Key']),
+    provider('sentry', 'observability', 'Sentry', 1, 'https://sentry.io/', ['DSN', 'Auth Token', 'Organization', 'Project']),
+    provider('posthog', 'analytics', 'PostHog', 1, 'https://app.posthog.com/signup', ['Host URL', 'Project API Key']),
+    provider('revenuecat', 'subscriptions', 'RevenueCat', 1, 'https://app.revenuecat.com/signup', ['Project ID', 'Public SDK Key', 'Secret API Key', 'Webhook Secret']),
+    provider('zendesk', 'support', 'Zendesk', 1, 'https://www.zendesk.com/register/', ['Subdomain', 'API Token', 'Support Email'])
   ];
 }
 

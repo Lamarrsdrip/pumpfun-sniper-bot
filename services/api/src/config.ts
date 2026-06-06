@@ -9,6 +9,8 @@ export const config = {
     .map((origin) => origin.trim())
     .filter(Boolean),
   secretManager: process.env.SECRET_MANAGER_PROVIDER || '',
+  providerVaultKey: process.env.FIELD_ENCRYPTION_KEY || '',
+  providerVaultPath: process.env.PROVIDER_SECRETS_PATH || 'data/provider-secrets.enc',
   providers: {
     identity: Boolean(process.env.AUTH_PROVIDER_SECRET),
     payments: Boolean(process.env.PAYMENT_PROVIDER_SECRET),

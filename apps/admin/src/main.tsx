@@ -7,14 +7,19 @@ type Overview = { mode: 'DEMO' | 'LIVE'; users: { total: number; active: number;
 type User = { id: string; mode: string; name: string; email: string; phone: string; status: string; kycStatus: string; lastActiveAt: string; notes: string[] };
 type MoneyRequest = { id: string; userId: string; type: 'DEPOSIT' | 'WITHDRAWAL'; amountMinor: string; feeMinor: string; status: string; provider: string; reference: string; bankName?: string; accountNumber?: string; accountName?: string; createdAt: string };
 type Trade = { id: string; userId: string; tokenId: string; side: string; amountMinor: string; feeMinor: string; status: string; createdAt: string };
-type Token = { id: string; name: string; symbol: string; mint: string; runnerScore: number; riskScore: number; liquidityNgn: string; volume24hNgn: string; holders: number; change24h: number; source: string };
+type Token = { id: string; name: string; symbol: string; mint: string; runnerScore: number; riskScore: number; liquidityNgn: string; volume24hNgn: string; holders: number; change24h: number; source: string; moderation?: { classification: string; hidden: boolean; featured: boolean } };
 type KycCase = { id: string; userId: string; status: string; provider: string; submittedAt?: string; reviewReason?: string };
-type Provider = { key: string; family: string; displayName: string; enabled: boolean; priority: number; configured: boolean; status: string; secret: string };
+type Provider = { key: string; family: string; displayName: string; enabled: boolean; priority: number; configured: boolean; status: string; secret: string; setupUrl?: string; docsUrl?: string; requiredFields?: string[]; featureUnlocked?: string; lastError?: string };
 type Audit = { id: string; actorId: string; action: string; targetType: string; targetId: string; reason: string; createdAt: string };
+type Campaign = { id: string; name: string; channel: string; audience: string; status: string; scheduledAt?: string; createdAt: string };
+type Incident = { id: string; title: string; severity: string; status: string; notes: string[]; affectedRecords: string[]; createdAt: string };
+type OperationsSettings = { swapFeePercent: number; botFeePercent: number; withdrawalFeePercent: number; minimumDepositNgn: number; maximumWithdrawalNgn: number; dailyUserLimitNgn: number; proMonthlyNgn: number; eliteMonthlyNgn: number };
+type BotControl = { userId: string; name: string; settings: { active: boolean; riskLevel: string } | null };
+type CopyTrader = { userId: string; name: string; enabled: boolean; riskRating: 'LOW' | 'MEDIUM' | 'HIGH'; trades: number; winRate: number; copiedVolumeNgn: string; reviewedAt?: string };
 type Notice = { tone: 'success' | 'warning'; text: string };
 
 const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8790';
-const nav = ['Overview', 'Users & KYC', 'Deposits', 'Withdrawals', 'Trades', 'Runner AI', 'Auto Sniper', 'Copy Trading', 'Campaigns & Earn', 'Providers & API Keys', 'Fees & Limits', 'Audit Log', 'Incidents'];
+const nav = ['Overview', 'Users & KYC', 'Deposits', 'Withdrawals', 'Trades', 'Runner AI', 'Auto Sniper', 'Copy Trading', 'Campaign Center', 'Campaigns & Earn', 'Providers & API Keys', 'Fees & Limits', 'Audit Log', 'Incidents', 'Launch Checklist'];
 
 async function request<T>(path: string, init: RequestInit = {}, mode: 'DEMO' | 'LIVE' = 'DEMO'): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`, { ...init, headers: { 'Content-Type': 'application/json', 'X-App-Mode': mode, ...init.headers } });
@@ -49,6 +54,13 @@ function Workspace({ selected, mode, overview, notice, refresh }: { selected: st
   if (selected === 'Trades') return <TradesPage mode={mode} />;
   if (selected === 'Runner AI') return <TokensPage mode={mode} />;
   if (selected === 'Providers & API Keys') return <ProvidersPage mode={mode} notice={notice} />;
+  if (selected === 'Campaign Center') return <CampaignCenter mode={mode} notice={notice} />;
+  if (selected === 'Campaigns & Earn') return <BountiesAdmin mode={mode} notice={notice} />;
+  if (selected === 'Auto Sniper') return <BotAdmin mode={mode} notice={notice} />;
+  if (selected === 'Copy Trading') return <CopyTradingAdmin mode={mode} notice={notice} />;
+  if (selected === 'Fees & Limits') return <FeesLimits mode={mode} notice={notice} />;
+  if (selected === 'Incidents') return <IncidentsPage mode={mode} notice={notice} />;
+  if (selected === 'Launch Checklist') return <LaunchChecklist overview={overview} />;
   if (selected === 'Audit Log') return <AuditPage mode={mode} />;
   return <OperationalModule name={selected} mode={mode} />;
 }
@@ -97,19 +109,109 @@ function TradesPage({ mode }: { mode: 'DEMO' | 'LIVE' }) {
 }
 
 function TokensPage({ mode }: { mode: 'DEMO' | 'LIVE' }) {
-  const [tokens, setTokens] = useState<Token[]>([]); useEffect(() => { request<{ tokens: Token[] }>('/v1/admin/tokens', {}, mode).then((value) => setTokens(value.tokens)); }, [mode]);
-  return <Panel title="Runner AI monitor" subtitle="Newest token observations first; no tokens are generated in Live mode"><Table headers={['Token', 'Contract', 'Runner', 'Risk', 'Liquidity', 'Volume', 'Holders', 'Movement', 'Source']}>{tokens.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.symbol}</small></td><td className="mono">{item.mint.slice(0, 8)}…{item.mint.slice(-6)}</td><td><Score value={item.runnerScore} /></td><td><Score value={item.riskScore} risk /></td><td>{naira(item.liquidityNgn)}</td><td>{naira(item.volume24hNgn)}</td><td>{item.holders.toLocaleString()}</td><td className={item.change24h >= 0 ? 'positive' : 'negative'}>{item.change24h > 0 ? '+' : ''}{item.change24h.toFixed(1)}%</td><td>{item.source}</td></tr>)}</Table></Panel>;
+  const [tokens, setTokens] = useState<Token[]>([]);
+  const load = () => request<{ tokens: Token[] }>('/v1/admin/tokens', {}, mode).then((value) => setTokens(value.tokens));
+  useEffect(() => { void load(); }, [mode]);
+  const moderate = async (item: Token, update: Partial<{ classification: string; hidden: boolean; featured: boolean }>) => {
+    await request(`/v1/admin/tokens/${item.id}`, { method: 'PATCH', body: JSON.stringify({ ...update, reason: `Runner AI review for ${item.symbol}` }) }, mode);
+    void load();
+  };
+  return <Panel title="Runner AI monitor" subtitle="Review, feature, hide or classify observed market tokens"><Table headers={['Token', 'Contract', 'Runner', 'Risk', 'Liquidity', 'Holders', 'Moderation', 'Actions']}>{tokens.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.symbol} · {item.source}</small></td><td className="mono">{item.mint.slice(0, 8)}…{item.mint.slice(-6)}</td><td><Score value={item.runnerScore} /></td><td><Score value={item.riskScore} risk /></td><td>{naira(item.liquidityNgn)}<small>Vol {naira(item.volume24hNgn)}</small></td><td>{item.holders.toLocaleString()}</td><td><Badge value={item.moderation?.hidden ? 'HIDDEN' : item.moderation?.featured ? 'FEATURED' : item.moderation?.classification || 'DEFAULT'} /></td><td className="actions"><button className="table-action" onClick={() => moderate(item, { featured: !item.moderation?.featured, hidden: false })}>{item.moderation?.featured ? 'Unfeature' : 'Feature'}</button><button className="table-muted" onClick={() => moderate(item, { classification: item.moderation?.classification === 'RISKY' ? 'DEFAULT' : 'RISKY' })}>Risky</button><button className="table-danger" onClick={() => moderate(item, { hidden: !item.moderation?.hidden, featured: false })}>{item.moderation?.hidden ? 'Restore' : 'Hide'}</button></td></tr>)}</Table></Panel>;
 }
 
 function ProvidersPage({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
-  const [providers, setProviders] = useState<Provider[]>([]); const load = () => request<Provider[]>('/v1/admin/providers', {}, mode).then(setProviders); useEffect(() => { void load(); }, [mode]);
+  const [providers, setProviders] = useState<Provider[]>([]); const [open, setOpen] = useState(''); const [values, setValues] = useState<Record<string, string>>({}); const load = () => request<Provider[]>('/v1/admin/providers', {}, mode).then(setProviders); useEffect(() => { void load(); }, [mode]);
   const change = async (item: Provider, enabled: boolean) => { await request(`/v1/admin/providers/${item.key}`, { method: 'PATCH', body: JSON.stringify({ enabled, reason: enabled ? 'Enabled by administrator' : 'Disabled by administrator' }) }, mode); notice({ tone: 'success', text: `${item.displayName} ${enabled ? 'enabled' : 'disabled'}.` }); void load(); };
   const test = async (item: Provider) => { const result = await request<{ message: string }>(`/v1/admin/providers/${item.key}/test`, { method: 'POST' }, mode); notice({ tone: item.configured ? 'success' : 'warning', text: `${item.displayName}: ${result.message}` }); };
+  const save = async (item: Provider) => {
+    const credentials = Object.fromEntries((item.requiredFields || []).map((field) => [field, values[`${item.key}:${field}`] || '']));
+    try { await request(`/v1/admin/providers/${item.key}/configure`, { method: 'POST', body: JSON.stringify({ credentials, publicConfig: {} }) }, mode); notice({ tone: 'success', text: `${item.displayName} configuration saved securely. Run Test next.` }); void load(); }
+    catch (error) { notice({ tone: 'warning', text: error instanceof Error ? error.message : 'Configuration failed.' }); }
+  };
   const grouped = useMemo(() => providers.reduce<Record<string, Provider[]>>((groups, item) => {
     (groups[item.family] ||= []).push(item);
     return groups;
   }, {}), [providers]);
-  return <div className="stack">{Object.entries(grouped).map(([family, items]) => <Panel key={family} title={`${family} providers`} subtitle="Enable, prioritize and test adapters without changing mobile code"><div className="provider-grid">{items?.map((item) => <div className="provider-card" key={item.key}><div><strong>{item.displayName}</strong><small>Priority {item.priority} · {item.secret}</small></div><Badge value={item.status} /><div className="provider-buttons"><button className="table-muted" onClick={() => test(item)}>Test</button><button className={item.enabled ? 'table-danger' : 'table-action'} onClick={() => change(item, !item.enabled)}>{item.enabled ? 'Disable' : 'Enable'}</button></div></div>)}</div></Panel>)}</div>;
+  return <div className="stack">{Object.entries(grouped).map(([family, items]) => <Panel key={family} title={`${family} providers`} subtitle="Credentials are sent only to the backend secret-storage endpoint"><div className="provider-grid">{items?.map((item) => <div className="provider-card" key={item.key}><div><strong>{item.displayName}</strong><small>Priority {item.priority} · {item.secret}</small></div><Badge value={item.status} /><p>{item.featureUnlocked || `Enables ${item.family} services`}</p><div className="provider-buttons"><a href={item.setupUrl} target="_blank" rel="noreferrer">Get credentials</a><button className="table-muted" onClick={() => setOpen(open === item.key ? '' : item.key)}>Configure</button><button className="table-muted" onClick={() => test(item)}>Test</button><button className={item.enabled ? 'table-danger' : 'table-action'} onClick={() => change(item, !item.enabled)}>{item.enabled ? 'Disable' : 'Enable'}</button></div>{open === item.key && <div className="provider-form">{(item.requiredFields || []).map((field) => <label key={field}>{field}<input type={/secret|key|password|credential/i.test(field) ? 'password' : 'text'} value={values[`${item.key}:${field}`] || ''} onChange={(event) => setValues({ ...values, [`${item.key}:${field}`]: event.target.value })} /></label>)}<button onClick={() => save(item)}>Save securely</button></div>}</div>)}</div></Panel>)}</div>;
+}
+
+function CampaignCenter({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
+  const [form, setForm] = useState({ name: '', channel: 'EMAIL', subject: '', body: '', segment: 'ALL', schedule: '' });
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const load = () => request<{ campaigns: Campaign[] }>('/v1/admin/campaigns', {}, mode).then((value) => setCampaigns(value.campaigns));
+  useEffect(() => { void load(); }, [mode]);
+  const submit = async (event: FormEvent, submitForApproval = false) => {
+    event.preventDefault();
+    try {
+      await request('/v1/admin/campaigns', { method: 'POST', body: JSON.stringify({ name: form.name, channel: form.channel, subject: form.subject || undefined, body: form.body, audience: form.segment, scheduledAt: form.schedule ? new Date(form.schedule).toISOString() : undefined, submitForApproval, segment: { marketingConsentRequired: true } }) }, mode);
+      notice({ tone: 'success', text: submitForApproval ? 'Campaign submitted for approval.' : 'Campaign saved as draft.' });
+      setForm({ name: '', channel: 'EMAIL', subject: '', body: '', segment: 'ALL', schedule: '' });
+      void load();
+    } catch (error) { notice({ tone: 'warning', text: error instanceof Error ? error.message : 'Campaign failed.' }); }
+  };
+  const approve = async (campaign: Campaign) => {
+    try { await request(`/v1/admin/campaigns/${campaign.id}/approve`, { method: 'POST' }, mode); notice({ tone: 'success', text: `${campaign.name} approved.` }); void load(); }
+    catch (error) { notice({ tone: 'warning', text: error instanceof Error ? error.message : 'Approval failed.' }); }
+  };
+  return <div className="stack"><Panel title="Campaign Center" subtitle="Consent-aware email, push, and in-app broadcasts"><form className="campaign-form" onSubmit={(event) => submit(event, false)}><label>Campaign name<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label><label>Channel<select value={form.channel} onChange={(e) => setForm({ ...form, channel: e.target.value })}><option>EMAIL</option><option>PUSH</option><option>IN_APP</option></select></label><label>Audience<select value={form.segment} onChange={(e) => setForm({ ...form, segment: e.target.value })}><option value="ALL">All consented users</option><option value="KYC_APPROVED">KYC-approved users</option><option value="INACTIVE">Inactive users</option><option value="BOUNTY_USERS">Bounty users</option><option value="TRADERS">Traders</option></select></label><label>Subject<input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} /></label><label className="wide">Message<textarea required value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} /></label><label>Schedule<input type="datetime-local" value={form.schedule} onChange={(e) => setForm({ ...form, schedule: e.target.value })} /></label><div className="wide actions"><button type="submit" className="table-muted">Save draft</button><button type="button" className="table-action" onClick={(event) => submit(event, true)}>Submit for approval</button></div></form></Panel><Panel title="Campaign delivery queue" subtitle="Drafts, approvals, schedules and delivery status"><Table headers={['Campaign', 'Channel', 'Audience', 'Schedule', 'Status', 'Action']}>{campaigns.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{date(item.createdAt)}</small></td><td>{item.channel}</td><td>{item.audience}</td><td>{item.scheduledAt ? date(item.scheduledAt) : 'Immediate after approval'}</td><td><Badge value={item.status} /></td><td>{item.status === 'PENDING_APPROVAL' && <button className="table-action" onClick={() => approve(item)}>Approve</button>}</td></tr>)}</Table></Panel></div>;
+}
+
+function FeesLimits({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
+  const [settings, setSettings] = useState<OperationsSettings | null>(null);
+  useEffect(() => { request<{ settings: OperationsSettings }>('/v1/admin/settings', {}, mode).then((value) => setSettings(value.settings)); }, [mode]);
+  if (!settings) return <Panel title="Fees & Limits" subtitle="Loading current policy"><p>Loading…</p></Panel>;
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    try { await request('/v1/admin/settings', { method: 'PUT', body: JSON.stringify(settings) }, mode); notice({ tone: 'success', text: `${mode} fees and limits saved with an audit record.` }); }
+    catch (error) { notice({ tone: 'warning', text: error instanceof Error ? error.message : 'Settings failed.' }); }
+  };
+  const fields: Array<[keyof OperationsSettings, string]> = [['swapFeePercent','Swap fee (%)'],['botFeePercent','Bot fee (%)'],['withdrawalFeePercent','Withdrawal fee (%)'],['minimumDepositNgn','Minimum deposit (₦)'],['maximumWithdrawalNgn','Maximum withdrawal (₦)'],['dailyUserLimitNgn','Daily user limit (₦)'],['proMonthlyNgn','Pro monthly price (₦)'],['eliteMonthlyNgn','Elite monthly price (₦)']];
+  return <Panel title="Fees & Limits" subtitle={`${mode} policy changes are versioned in the audit trail`}><form className="campaign-form" onSubmit={save}>{fields.map(([key, label]) => <label key={key}>{label}<input type="number" min="0" step="0.01" value={settings[key]} onChange={(event) => setSettings({ ...settings, [key]: Number(event.target.value) })} /></label>)}<div className="wide actions"><button className="table-action" type="submit">Save fees and limits</button></div></form></Panel>;
+}
+
+function IncidentsPage({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
+  const [items, setItems] = useState<Incident[]>([]); const [title, setTitle] = useState(''); const [severity, setSeverity] = useState('MEDIUM'); const [note, setNote] = useState('');
+  const load = () => request<{ incidents: Incident[] }>('/v1/admin/incidents', {}, mode).then((value) => setItems(value.incidents));
+  useEffect(() => { void load(); }, [mode]);
+  const create = async (event: FormEvent) => { event.preventDefault(); await request('/v1/admin/incidents', { method: 'POST', body: JSON.stringify({ title, severity, note, affectedRecords: [] }) }, mode); setTitle(''); setNote(''); notice({ tone: 'success', text: 'Incident opened and added to the audit trail.' }); void load(); };
+  const resolve = async (item: Incident) => { await request(`/v1/admin/incidents/${item.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'RESOLVED', note: 'Resolved by operations administrator' }) }, mode); notice({ tone: 'success', text: `${item.title} resolved.` }); void load(); };
+  return <div className="stack"><Panel title="Open an incident" subtitle="Track operational, payment, trading or security events"><form className="campaign-form" onSubmit={create}><label>Title<input required value={title} onChange={(event) => setTitle(event.target.value)} /></label><label>Severity<select value={severity} onChange={(event) => setSeverity(event.target.value)}><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></label><label className="wide">Initial note<textarea value={note} onChange={(event) => setNote(event.target.value)} /></label><div className="wide actions"><button className="table-action">Create incident</button></div></form></Panel><Panel title="Incident register" subtitle="Ownership, severity and resolution state"><Table headers={['Incident', 'Severity', 'Opened', 'Status', 'Action']}>{items.map((item) => <tr key={item.id}><td><strong>{item.title}</strong><small>{item.notes.at(-1)}</small></td><td><Badge value={item.severity} /></td><td>{date(item.createdAt)}</td><td><Badge value={item.status} /></td><td>{item.status !== 'RESOLVED' && <button className="table-action" onClick={() => resolve(item)}>Resolve</button>}</td></tr>)}</Table></Panel></div>;
+}
+
+function BountiesAdmin({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
+  const [items, setItems] = useState<Array<{ id: string; title: string; sponsor: string; rewardNgn: string; category: string; deadline: string; status: string }>>([]);
+  const [form, setForm] = useState({ title: '', sponsor: 'NairaMeme', rewardNgn: 50000, category: 'Meme creation', deadline: '' });
+  const load = () => request<{ bounties: typeof items }>('/v1/admin/bounties', {}, mode).then((value) => setItems(value.bounties));
+  useEffect(() => { void load(); }, [mode]);
+  const create = async (event: FormEvent) => { event.preventDefault(); await request('/v1/admin/bounties', { method: 'POST', body: JSON.stringify({ ...form, deadline: new Date(form.deadline).toISOString() }) }, mode); notice({ tone: 'success', text: 'Bounty created and logged.' }); setForm({ ...form, title: '', deadline: '' }); void load(); };
+  return <div className="stack"><Panel title="Create bounty" subtitle="Funded campaign definitions for the Earn marketplace"><form className="campaign-form" onSubmit={create}><label>Task title<input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label><label>Sponsor<input required value={form.sponsor} onChange={(e) => setForm({ ...form, sponsor: e.target.value })} /></label><label>Reward (₦)<input type="number" min="1000" value={form.rewardNgn} onChange={(e) => setForm({ ...form, rewardNgn: Number(e.target.value) })} /></label><label>Category<input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} /></label><label>Deadline<input required type="datetime-local" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} /></label><div className="wide actions"><button className="table-action">Create bounty</button></div></form></Panel><Panel title="Bounty marketplace operations" subtitle="Published rewards and deadlines"><Table headers={['Task', 'Sponsor', 'Reward', 'Category', 'Deadline', 'Status']}>{items.map((item) => <tr key={item.id}><td><strong>{item.title}</strong></td><td>{item.sponsor}</td><td>{naira(item.rewardNgn)}</td><td>{item.category}</td><td>{date(item.deadline)}</td><td><Badge value={item.status} /></td></tr>)}</Table></Panel></div>;
+}
+
+function BotAdmin({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
+  const [users, setUsers] = useState<BotControl[]>([]);
+  const load = () => request<{ users: BotControl[] }>('/v1/admin/bot-controls', {}, mode).then((value) => setUsers(value.users));
+  useEffect(() => { void load(); }, [mode]);
+  const toggle = async (item: BotControl) => { const active = !item.settings?.active; await request(`/v1/admin/bot-controls/${item.userId}`, { method: 'PATCH', body: JSON.stringify({ active }) }, mode); notice({ tone: active ? 'success' : 'warning', text: `${item.name} bot ${active ? 'enabled' : 'stopped'}.` }); void load(); };
+  return <Panel title="Auto Sniper operations" subtitle="Per-user bot state and emergency control"><Table headers={['User', 'Risk style', 'State', 'Action']}>{users.map((item) => <tr key={item.userId}><td><strong>{item.name}</strong><small>{item.userId}</small></td><td>{item.settings?.riskLevel || 'Not configured'}</td><td><Badge value={item.settings?.active ? 'ACTIVE' : 'STOPPED'} /></td><td><button className={item.settings?.active ? 'table-danger' : 'table-action'} onClick={() => toggle(item)}>{item.settings?.active ? 'Stop bot' : 'Enable bot'}</button></td></tr>)}</Table></Panel>;
+}
+
+function CopyTradingAdmin({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
+  const [traders, setTraders] = useState<CopyTrader[]>([]);
+  const load = () => request<{ traders: CopyTrader[] }>('/v1/admin/copy-traders', {}, mode).then((value) => setTraders(value.traders));
+  useEffect(() => { void load(); }, [mode]);
+  const update = async (item: CopyTrader, enabled: boolean) => {
+    await request(`/v1/admin/copy-traders/${item.userId}`, { method: 'PATCH', body: JSON.stringify({ enabled, riskRating: item.riskRating, reason: enabled ? 'Performance profile approved' : 'Copy profile suspended by risk review' }) }, mode);
+    notice({ tone: enabled ? 'success' : 'warning', text: `${item.name} copy profile ${enabled ? 'enabled' : 'disabled'}.` });
+    void load();
+  };
+  return <Panel title="Copy Trading review" subtitle="Eligibility is controlled separately from social rankings"><Table headers={['Trader', 'Risk', 'Trades', 'Win rate', 'Copied volume', 'Status', 'Action']}>{traders.map((item) => <tr key={item.userId}><td><strong>{item.name}</strong><small>{item.userId}</small></td><td><Badge value={item.riskRating} /></td><td>{item.trades}</td><td>{item.winRate.toFixed(1)}%</td><td>{naira(item.copiedVolumeNgn)}</td><td><Badge value={item.enabled ? 'ACTIVE' : 'DISABLED'} /></td><td><button className={item.enabled ? 'table-danger' : 'table-action'} onClick={() => update(item, !item.enabled)}>{item.enabled ? 'Disable copy' : 'Enable copy'}</button></td></tr>)}</Table></Panel>;
+}
+
+function LaunchChecklist({ overview }: { overview: Overview | null }) {
+  const providers = Object.values(overview?.providers || {}); const requiredFamilies = ['payments','identity','kyc','marketData','trading','custody','transactionRisk','email','push','observability']; const required = providers.filter((p) => requiredFamilies.includes(p.family));
+  const release = ['App name and store metadata', 'Bundle ID and package name', 'Icons and splash', 'Privacy policy and terms', 'Risk disclosure', 'Support email', 'Delete account flow', 'Production API URL', 'Crash reporting', 'TestFlight build', 'Google Play internal test'];
+  const connectedFamilies = new Set(required.filter((p) => p.configured && p.enabled).map((p) => p.family));
+  return <div className="panel-grid"><Panel title="Provider readiness" subtitle={`${connectedFamilies.size}/${requiredFamilies.length} required capabilities configured`}><div className="compact-list">{required.map(item => <div className="list-row" key={item.key}><div><strong>{item.displayName}</strong><small>{item.featureUnlocked || item.family}</small></div><Badge value={item.status} /></div>)}</div></Panel><Panel title="Store release checklist" subtitle="Evidence required before submission"><div className="compact-list">{release.map(item => <div className="list-row" key={item}><strong>{item}</strong><Badge value="PENDING" /></div>)}</div></Panel></div>;
 }
 
 function AuditPage({ mode }: { mode: 'DEMO' | 'LIVE' }) {
@@ -118,14 +220,7 @@ function AuditPage({ mode }: { mode: 'DEMO' | 'LIVE' }) {
 }
 
 function OperationalModule({ name, mode }: { name: string; mode: string }) {
-  const guidance: Record<string, string[]> = {
-    'Auto Sniper': ['Global emergency stop', 'Per-user limits', 'Bot PnL and trade history', 'Risk preset versioning'],
-    'Copy Trading': ['Trader eligibility review', 'Risk-adjusted performance', 'Follower allocations', 'Copy profile suspension'],
-    'Campaigns & Earn': ['Bounty creation', 'Submission review', 'Winner approval', 'Consent-aware email and push'],
-    'Fees & Limits': ['Swap fee', 'Bot fee', 'Withdrawal fee', 'KYC-tier daily limits'],
-    Incidents: ['Create incident', 'Assign severity', 'Link affected records', 'Resolve with audit notes']
-  };
-  return <Panel title={name} subtitle={`${mode} control surface`}><div className="module-list">{(guidance[name] || []).map((item) => <div key={item}><CheckCircle2 /><span>{item}</span><Badge value="BACKEND CONTRACT NEXT" /></div>)}</div><p className="module-note">This module does not perform a fake action. Its real workflow requires the corresponding persistence and provider adapter before activation.</p></Panel>;
+  return <Panel title={name} subtitle={`${mode} operations`}><p>This module has no records in the selected environment.</p></Panel>;
 }
 
 function Metric({ label, value, icon }: { label: string; value: string | number; icon: ReactNode }) { return <div className="metric">{icon}<div><small>{label}</small><strong>{value}</strong></div></div>; }

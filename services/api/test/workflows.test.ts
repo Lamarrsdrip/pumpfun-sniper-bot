@@ -14,6 +14,17 @@ test('demo session returns funded Naira-first home without leaking into live mod
   await app.close();
 });
 
+test('authenticated role controls admin visibility', async () => {
+  const app = await buildApp();
+  const admin = await app.inject({ method: 'POST', url: '/v1/auth/demo', payload: { userId: 'demo-user-ada' } });
+  const adminMe = await app.inject({ method: 'GET', url: '/v1/me', headers: { authorization: `Bearer ${admin.json().token}` } });
+  assert.equal(adminMe.json().isAdmin, true);
+  const user = await app.inject({ method: 'POST', url: '/v1/auth/demo', payload: { userId: 'demo-user-tobi' } });
+  const userMe = await app.inject({ method: 'GET', url: '/v1/me', headers: { authorization: `Bearer ${user.json().token}` } });
+  assert.equal(userMe.json().isAdmin, false);
+  await app.close();
+});
+
 test('demo deposit approval credits exactly once and produces an audit record', async () => {
   const app = await buildApp();
   const created = await app.inject({ method: 'POST', url: '/v1/deposits', headers: { 'x-app-mode': 'DEMO' }, payload: { amountNgn: 10000 } });

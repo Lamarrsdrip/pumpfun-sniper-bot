@@ -5,10 +5,10 @@ const now = '2026-06-05T18:00:00.000Z';
 export function seedDemoData(): StoreState {
   return {
     users: [
-      { id: 'demo-user-ada', mode: 'DEMO', name: 'Ada Nwosu', email: 'ada@demo.nairameme.ng', phone: '+2348010001001', status: 'ACTIVE', kycStatus: 'APPROVED', createdAt: '2026-06-01T09:00:00.000Z', lastActiveAt: now, notes: [] },
-      { id: 'demo-user-tobi', mode: 'DEMO', name: 'Tobi Adeyemi', email: 'tobi@demo.nairameme.ng', phone: '+2348010001002', status: 'ACTIVE', kycStatus: 'PENDING_REVIEW', createdAt: '2026-06-03T11:00:00.000Z', lastActiveAt: '2026-06-05T17:40:00.000Z', notes: ['Requested clearer address document.'] },
-      { id: 'demo-user-zainab', mode: 'DEMO', name: 'Zainab Musa', email: 'zainab@demo.nairameme.ng', phone: '+2348010001003', status: 'ACTIVE', kycStatus: 'NOT_STARTED', createdAt: '2026-06-04T14:00:00.000Z', lastActiveAt: '2026-06-05T16:10:00.000Z', notes: [] },
-      { id: 'live-user-empty', mode: 'LIVE', name: 'Live Preview User', email: 'live-preview@nairameme.ng', phone: '+2348010001999', status: 'ACTIVE', kycStatus: 'NOT_STARTED', createdAt: '2026-06-05T12:00:00.000Z', lastActiveAt: now, notes: [] }
+      { id: 'demo-user-ada', mode: 'DEMO', name: 'Ada Nwosu', email: 'ada@demo.nairameme.ng', phone: '+2348010001001', status: 'ACTIVE', role: 'SUPER_ADMIN', kycStatus: 'APPROVED', createdAt: '2026-06-01T09:00:00.000Z', lastActiveAt: now, notes: [] },
+      { id: 'demo-user-tobi', mode: 'DEMO', name: 'Tobi Adeyemi', email: 'tobi@demo.nairameme.ng', phone: '+2348010001002', status: 'ACTIVE', role: 'USER', kycStatus: 'PENDING_REVIEW', createdAt: '2026-06-03T11:00:00.000Z', lastActiveAt: '2026-06-05T17:40:00.000Z', notes: ['Requested clearer address document.'] },
+      { id: 'demo-user-zainab', mode: 'DEMO', name: 'Zainab Musa', email: 'zainab@demo.nairameme.ng', phone: '+2348010001003', status: 'ACTIVE', role: 'USER', kycStatus: 'NOT_STARTED', createdAt: '2026-06-04T14:00:00.000Z', lastActiveAt: '2026-06-05T16:10:00.000Z', notes: [] },
+      { id: 'live-user-empty', mode: 'LIVE', name: 'Live Preview User', email: 'live-preview@nairameme.ng', phone: '+2348010001999', status: 'ACTIVE', role: 'USER', kycStatus: 'NOT_STARTED', createdAt: '2026-06-05T12:00:00.000Z', lastActiveAt: now, notes: [] }
     ],
     wallets: [
       ...['NGN', 'USDT', 'USDC', 'SOL', 'ETH', 'BTC'].map((asset) => ({ id: `demo-user-ada-${asset.toLowerCase()}`, userId: 'demo-user-ada', mode: 'DEMO' as const, asset, label: `${asset} Wallet` })),

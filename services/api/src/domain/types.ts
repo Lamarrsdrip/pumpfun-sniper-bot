@@ -1,5 +1,6 @@
 export type Mode = 'DEMO' | 'LIVE';
 export type UserStatus = 'ACTIVE' | 'SUSPENDED';
+export type UserRole = 'USER' | 'ADMIN' | 'SUPER_ADMIN' | 'COMPLIANCE_ADMIN' | 'SUPPORT_ADMIN';
 export type KycStatus =
   | 'NOT_STARTED'
   | 'IN_PROGRESS'
@@ -16,6 +17,7 @@ export type User = {
   email: string;
   phone: string;
   status: UserStatus;
+  role: UserRole;
   kycStatus: KycStatus;
   createdAt: string;
   lastActiveAt: string;
@@ -71,6 +73,7 @@ export type ProviderConfig = {
   setupUrl?: string;
   docsUrl?: string;
   requiredFields?: string[];
+  featureUnlocked?: string;
   publicConfig: Record<string, string | number | boolean>;
 };
 

@@ -96,6 +96,12 @@ export function createMemoryStore(initial: StoreState) {
     listBounties(mode: Mode): Bounty[] {
       return clone(state.bounties.filter((bounty) => bounty.mode === mode));
     },
+    saveBounty(value: Bounty): Bounty {
+      const index = state.bounties.findIndex((item) => item.id === value.id);
+      if (index >= 0) state.bounties[index] = clone(value);
+      else state.bounties.push(clone(value));
+      return clone(value);
+    },
     listAlerts(mode: Mode): Alert[] {
       return clone(state.alerts.filter((alert) => alert.mode === mode).sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
     },

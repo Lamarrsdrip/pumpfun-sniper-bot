@@ -34,7 +34,9 @@
           "backgroundColor": "#06110D",
           "resizeMode": "contain"
         }
-      ]
+      ],
+      "expo-font",
+      "expo-status-bar"
     ],
     "extra": {
       "router": {},
