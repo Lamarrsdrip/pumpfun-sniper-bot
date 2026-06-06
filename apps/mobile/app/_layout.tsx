@@ -14,6 +14,14 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="deposit" options={{ title: 'Deposit Naira', presentation: 'modal' }} />
         <Stack.Screen name="withdraw" options={{ title: 'Withdraw Naira', presentation: 'modal' }} />
+        <Stack.Screen name="crypto-deposit" options={{ title: 'Deposit crypto' }} />
+        <Stack.Screen name="crypto-withdraw" options={{ title: 'Withdraw crypto' }} />
+        <Stack.Screen name="swap" options={{ title: 'Swap' }} />
+        <Stack.Screen name="network" options={{ title: 'Meme Network' }} />
+        <Stack.Screen name="profile" options={{ title: 'Profile & settings' }} />
+        <Stack.Screen name="admin" options={{ title: 'Admin mode' }} />
+        <Stack.Screen name="bounty/[id]" options={{ title: 'Bounty' }} />
+        <Stack.Screen name="create-bounty" options={{ title: 'Create bounty' }} />
         <Stack.Screen name="token/[mint]" options={{ title: 'Token intelligence' }} />
         <Stack.Screen name="trade/[mint]" options={{ title: 'Review trade', presentation: 'modal' }} />
       </Stack>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api } from '@/api';
 import { Button, Card, EmptyState, formatNaira, Label } from '@/components';
 import { dark, spacing } from '@/theme';
@@ -18,10 +18,16 @@ export default function TokenDetail() {
   const copy = async () => { await Clipboard.setStringAsync(token.mint); setCopied(true); setTimeout(() => setCopied(false), 1500); };
   return <ScrollView style={styles.root} contentContainerStyle={styles.content}>
     <View style={styles.hero}><View><Text style={styles.name}>{token.name}</Text><Text style={styles.symbol}>{token.symbol} · {token.source}</Text></View><View style={styles.score}><Text style={styles.scoreValue}>{token.runnerScore}</Text><Text style={styles.scoreLabel}>Runner</Text></View></View>
+    <View style={{ height: 190, borderRadius: 14, backgroundColor: '#0B100E', borderWidth: 1, borderColor: dark.border, padding: 14, justifyContent: 'flex-end' }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', position: 'absolute', top: 14, left: 14, right: 14 }}><Text style={{ color: dark.muted, fontSize: 11 }}>LIVE DEMO CHART · 5M</Text><Text style={{ color: dark.green, fontWeight: '900' }}>+{token.change24h}%</Text></View>
+      <View style={{ height: 120, flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>{[22, 18, 31, 28, 37, 33, 48, 44, 56, 49, 64, 58, 72, 67, 83, 76, 96, 88, 110, 102, 118].map((h, i) => <View key={i} style={{ flex: 1, height: h, borderRadius: 2, backgroundColor: i % 4 === 1 ? dark.red : dark.green }} />)}</View>
+    </View>
     <Card tone={token.riskScore >= 60 ? 'warning' : 'green'}><Label>AI intelligence</Label><Text style={styles.summary}>{data.ai.text}</Text><Text style={styles.disclaimer}>{data.explanation.disclaimer}</Text></Card>
-    <View style={styles.grid}><Metric label="Price" value={formatNaira(token.priceNgn)} /><Metric label="24h move" value={`${token.change24h > 0 ? '+' : ''}${token.change24h.toFixed(1)}%`} /><Metric label="Market cap" value={formatNaira(token.marketCapNgn)} /><Metric label="Liquidity" value={formatNaira(token.liquidityNgn)} /><Metric label="24h volume" value={formatNaira(token.volume24hNgn)} /><Metric label="Holders" value={token.holders.toLocaleString()} /><Metric label="Risk score" value={`${token.riskScore}/100`} /><Metric label="AI source" value={data.ai.source.replaceAll('_', ' ')} /></View>
+    <View style={styles.grid}><Metric label="Price" value={formatNaira(token.priceNgn)} /><Metric label="24h move" value={`${token.change24h > 0 ? '+' : ''}${token.change24h.toFixed(1)}%`} /><Metric label="Market cap" value={formatNaira(token.marketCapNgn)} /><Metric label="Liquidity" value={formatNaira(token.liquidityNgn)} /><Metric label="24h volume" value={formatNaira(token.volume24hNgn)} /><Metric label="Holders" value={token.holders.toLocaleString()} /><Metric label="Bonding curve" value="67.4%" /><Metric label="Buy pressure" value="68 / 32" /></View>
     <Card><Label>Contract address</Label><Text selectable style={styles.mint}>{token.mint}</Text><Button title={copied ? 'Mint copied' : 'Copy contract'} kind="secondary" onPress={copy} /></Card>
     <Card tone="warning"><Text style={styles.riskTitle}>Highest risk</Text><Text style={styles.summary}>{data.explanation.highestRisk}</Text></Card>
+    <Card><Text style={styles.riskTitle}>Recent activity</Text>{['Buy · ₦184,000 · 12s ago', 'Buy · ₦72,400 · 19s ago', 'Sell · ₦31,200 · 28s ago'].map((x, i) => <Text key={x} style={{ color: i === 2 ? dark.red : dark.green, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: dark.border }}>{x}</Text>)}</Card>
+    <View style={{ flexDirection: 'row', gap: 8 }}><Pressable onPress={() => Linking.openURL(`https://pump.fun/coin/${token.mint}`)} style={{ flex: 1, padding: 12, borderRadius: 8, backgroundColor: dark.surface, alignItems: 'center' }}><Text style={{ color: dark.text, fontWeight: '800' }}>Open Pump.fun</Text></Pressable><Pressable onPress={() => router.push('/swap')} style={{ flex: 1, padding: 12, borderRadius: 8, backgroundColor: dark.surface, alignItems: 'center' }}><Text style={{ color: dark.text, fontWeight: '800' }}>Swap</Text></Pressable></View>
     <View style={styles.actions}><Button title="Buy" onPress={() => router.push(`/trade/${token.mint}?side=BUY`)} /><Button title="Sell" kind="secondary" onPress={() => router.push(`/trade/${token.mint}?side=SELL`)} /></View>
   </ScrollView>;
 }
