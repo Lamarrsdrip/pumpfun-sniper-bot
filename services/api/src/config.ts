@@ -1,6 +1,6 @@
 export const config = {
   port: Number(process.env.API_PORT || 8790),
-  host: process.env.API_HOST || '127.0.0.1',
+  host: process.env.API_HOST || (process.env.NODE_ENV === 'production' ? '127.0.0.1' : '0.0.0.0'),
   environment: process.env.NODE_ENV || 'development',
   appUrl: process.env.APP_URL || 'nairameme://',
   adminApiToken: process.env.ADMIN_API_TOKEN || '',
