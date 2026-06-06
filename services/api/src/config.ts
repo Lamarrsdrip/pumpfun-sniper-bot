@@ -18,7 +18,15 @@ export const config = {
     email: Boolean(process.env.EMAIL_PROVIDER_KEY),
     push: Boolean(process.env.EXPO_ACCESS_TOKEN),
     trading: Boolean(process.env.TRADING_PROVIDER_URL && process.env.TRADING_PROVIDER_KEY),
-    ai: Boolean(process.env.AI_PROVIDER_KEY)
+    ai: Boolean(process.env.EMERGENT_LLM_API_KEY || process.env.AI_PROVIDER_KEY)
+  },
+  ai: {
+    baseUrl: process.env.EMERGENT_LLM_BASE_URL || '',
+    model: process.env.EMERGENT_LLM_MODEL || 'low-cost',
+    dailyCreditBudget: Number(process.env.EMERGENT_LLM_DAILY_CREDIT_BUDGET || 1),
+    maxRequestsPerMinute: Number(process.env.EMERGENT_LLM_MAX_REQUESTS_PER_MINUTE || 6),
+    cacheTtlSeconds: Number(process.env.EMERGENT_LLM_CACHE_TTL_SECONDS || 900),
+    enabled: process.env.AI_EXPLANATIONS_ENABLED === 'true'
   },
   flags: {
     deposits: process.env.FEATURE_DEPOSITS === 'true',

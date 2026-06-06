@@ -1,197 +1,139 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, AlertTriangle, Banknote, Bell, Bot, CheckCircle2, KeyRound, LoaderCircle, Mail, ShieldCheck, Users } from 'lucide-react';
+import { Activity, AlertTriangle, Banknote, Bot, CheckCircle2, ChevronRight, KeyRound, Search, ShieldCheck, Users, WalletCards } from 'lucide-react';
 import './styles.css';
 
-type Overview = {
-  users: { total: number; active: number; restricted: number; pendingKyc: number };
-  money: { depositsPendingNgn: string; withdrawalsPendingNgn: string; revenueTodayNgn: string };
-  operations: { openRiskCases: number; pendingApprovals: number; activeIncidents: number };
-  providers: Record<string, { configured: boolean; status: string }>;
-  features: Record<string, boolean>;
-};
-
+type Overview = { mode: 'DEMO' | 'LIVE'; users: { total: number; active: number; restricted: number; pendingKyc: number }; money: Record<string, string>; operations: { openRiskCases: number; pendingApprovals: number; activeIncidents: number }; providers: Record<string, Provider>; features: Record<string, boolean> };
+type User = { id: string; mode: string; name: string; email: string; phone: string; status: string; kycStatus: string; lastActiveAt: string; notes: string[] };
+type MoneyRequest = { id: string; userId: string; type: 'DEPOSIT' | 'WITHDRAWAL'; amountMinor: string; feeMinor: string; status: string; provider: string; reference: string; bankName?: string; accountNumber?: string; accountName?: string; createdAt: string };
+type Trade = { id: string; userId: string; tokenId: string; side: string; amountMinor: string; feeMinor: string; status: string; createdAt: string };
+type Token = { id: string; name: string; symbol: string; mint: string; runnerScore: number; riskScore: number; liquidityNgn: string; volume24hNgn: string; holders: number; change24h: number; source: string };
+type KycCase = { id: string; userId: string; status: string; provider: string; submittedAt?: string; reviewReason?: string };
+type Provider = { key: string; family: string; displayName: string; enabled: boolean; priority: number; configured: boolean; status: string; secret: string };
+type Audit = { id: string; actorId: string; action: string; targetType: string; targetId: string; reason: string; createdAt: string };
 type Notice = { tone: 'success' | 'warning'; text: string };
 
 const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8790';
-const navItems = ['Overview', 'Users & KYC', 'Deposits', 'Withdrawals', 'Trades', 'Runner AI', 'Auto Sniper', 'Copy trading', 'Social safety', 'Campaigns', 'Providers & API keys', 'Fees & limits', 'Audit log', 'Incidents'];
+const nav = ['Overview', 'Users & KYC', 'Deposits', 'Withdrawals', 'Trades', 'Runner AI', 'Auto Sniper', 'Copy Trading', 'Campaigns & Earn', 'Providers & API Keys', 'Fees & Limits', 'Audit Log', 'Incidents'];
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const hasBody = init?.body !== undefined && init.body !== null;
-  const response = await fetch(`${apiUrl}${path}`, {
-    ...init,
-    headers: {
-      ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
-      ...init?.headers
-    }
-  });
+async function request<T>(path: string, init: RequestInit = {}, mode: 'DEMO' | 'LIVE' = 'DEMO'): Promise<T> {
+  const response = await fetch(`${apiUrl}${path}`, { ...init, headers: { 'Content-Type': 'application/json', 'X-App-Mode': mode, ...init.headers } });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.message || 'The action could not be completed.');
   return body as T;
 }
 
 function App() {
-  const [overview, setOverview] = useState<Overview | null>(null);
   const [selected, setSelected] = useState('Overview');
+  const [mode, setMode] = useState<'DEMO' | 'LIVE'>('DEMO');
+  const [overview, setOverview] = useState<Overview | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
-  const [campaignOpen, setCampaignOpen] = useState(false);
-  const [busy, setBusy] = useState('');
+  const refresh = () => request<Overview>(`/v1/admin/overview?mode=${mode}`, {}, mode).then(setOverview).catch((error) => setNotice({ tone: 'warning', text: error.message }));
+  useEffect(() => { void refresh(); }, [mode]);
+  return <main>
+    <aside><div className="brand"><span>NM</span><div><strong>NairaMeme</strong><small>Business operations</small></div></div><nav>{nav.map((item) => <button key={item} className={selected === item ? 'active' : ''} onClick={() => setSelected(item)}>{item}<ChevronRight /></button>)}</nav></aside>
+    <section className="content">
+      <header><div><p className="eyebrow">{mode} OPERATIONS</p><h1>{selected}</h1><p>Operate users, money movement, markets, providers and controls from one place.</p></div><div className="header-actions"><div className="mode-switch"><button className={mode === 'DEMO' ? 'selected' : ''} onClick={() => setMode('DEMO')}>Demo</button><button className={mode === 'LIVE' ? 'selected live' : ''} onClick={() => setMode('LIVE')}>Live</button></div><button className="danger" onClick={() => request('/v1/admin/emergency/trading/pause', { method: 'POST' }, mode).then(() => setNotice({ tone: 'warning', text: 'Emergency pause request recorded for approval.' }))}><AlertTriangle /> Emergency pause</button></div></header>
+      {mode === 'DEMO' && <div className="demo-banner"><ShieldCheck /> Demo operations use sample users and money. Live records remain isolated.</div>}
+      {notice && <div className={`notice ${notice.tone}`}><span>{notice.text}</span><button onClick={() => setNotice(null)}>Close</button></div>}
+      <Workspace selected={selected} mode={mode} overview={overview} notice={setNotice} refresh={refresh} />
+    </section>
+  </main>;
+}
 
-  const load = async () => {
-    try {
-      setOverview(await request<Overview>('/v1/admin/overview'));
-      setNotice(null);
-    } catch {
-      setNotice({ tone: 'warning', text: 'Admin API unavailable. Start the API service and check VITE_API_URL.' });
-    }
+function Workspace({ selected, mode, overview, notice, refresh }: { selected: string; mode: 'DEMO' | 'LIVE'; overview: Overview | null; notice: (value: Notice) => void; refresh: () => void }) {
+  if (selected === 'Overview') return <OverviewPage data={overview} />;
+  if (selected === 'Users & KYC') return <UsersPage mode={mode} notice={notice} />;
+  if (selected === 'Deposits') return <MoneyPage mode={mode} type="DEPOSIT" notice={notice} refresh={refresh} />;
+  if (selected === 'Withdrawals') return <MoneyPage mode={mode} type="WITHDRAWAL" notice={notice} refresh={refresh} />;
+  if (selected === 'Trades') return <TradesPage mode={mode} />;
+  if (selected === 'Runner AI') return <TokensPage mode={mode} />;
+  if (selected === 'Providers & API Keys') return <ProvidersPage mode={mode} notice={notice} />;
+  if (selected === 'Audit Log') return <AuditPage mode={mode} />;
+  return <OperationalModule name={selected} mode={mode} />;
+}
+
+function OverviewPage({ data }: { data: Overview | null }) {
+  const metrics = [
+    ['Total users', data?.users.total || 0, <Users />], ['Active users', data?.users.active || 0, <Activity />],
+    ['Deposits today', naira(data?.money.depositsTodayNgn), <Banknote />], ['Withdrawals today', naira(data?.money.withdrawalsTodayNgn), <WalletCards />],
+    ['Trading volume', naira(data?.money.tradingVolumeNgn), <Activity />], ['Fees earned', naira(data?.money.revenueTodayNgn), <Banknote />],
+    ['Pending approvals', data?.operations.pendingApprovals || 0, <ShieldCheck />], ['Risk alerts', data?.operations.openRiskCases || 0, <AlertTriangle />]
+  ] as const;
+  return <><div className="metrics">{metrics.map(([label, value, icon]) => <Metric key={label} label={label} value={value} icon={icon} />)}</div><div className="panel-grid">
+    <Panel title="Provider health" subtitle="Configuration and priority from the backend"><div className="compact-list">{Object.values(data?.providers || {}).slice(0, 8).map((item) => <div className="list-row" key={item.key}><div><strong>{item.displayName}</strong><small>{item.family} · priority {item.priority}</small></div><Badge value={item.status} /></div>)}</div></Panel>
+    <Panel title="System controls" subtitle="The app fails closed when a real provider is missing"><div className="system-state"><CheckCircle2 /><div><strong>Demo ledger operational</strong><p>Deposits, withdrawals, fees and trades are auditable.</p></div></div><div className="system-state warning-state"><AlertTriangle /><div><strong>Live execution disabled</strong><p>Requires production custody, provider webhooks and deployment approval.</p></div></div></Panel>
+  </div></>;
+}
+
+function UsersPage({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
+  const [users, setUsers] = useState<User[]>([]); const [cases, setCases] = useState<KycCase[]>([]); const [query, setQuery] = useState('');
+  const load = () => Promise.all([request<{ users: User[] }>(`/v1/admin/users?mode=${mode}&q=${encodeURIComponent(query)}`, {}, mode), request<{ cases: KycCase[] }>('/v1/admin/kyc', {}, mode)]).then(([a, b]) => { setUsers(a.users); setCases(b.cases.filter((item) => users.length === 0 || true)); });
+  useEffect(() => { void load(); }, [mode]);
+  const updateUser = async (user: User, status: 'ACTIVE' | 'SUSPENDED') => {
+    await request(`/v1/admin/users/${user.id}`, { method: 'PATCH', body: JSON.stringify({ status, reason: `${status === 'SUSPENDED' ? 'Risk review' : 'Admin review completed'}` }) }, mode); notice({ tone: 'success', text: `${user.name} is now ${status.toLowerCase()}.` }); void load();
   };
-
-  useEffect(() => { void load(); }, []);
-
-  const testProvider = async (key: string) => {
-    setBusy(`provider-${key}`);
-    try {
-      const result = await request<{ status: string }>(`/v1/admin/providers/${key}/test`, { method: 'POST' });
-      setNotice({ tone: result.status === 'CONFIGURED' ? 'success' : 'warning', text: `${key}: ${result.status.toLowerCase()}.` });
-    } catch (error) {
-      setNotice({ tone: 'warning', text: error instanceof Error ? error.message : 'Provider test failed.' });
-    } finally {
-      setBusy('');
-    }
+  const decide = async (item: KycCase, decision: string) => {
+    await request(`/v1/admin/kyc/${item.id}/decision`, { method: 'POST', body: JSON.stringify({ decision, reason: `Admin ${decision.toLowerCase().replaceAll('_', ' ')}` }) }, mode); notice({ tone: 'success', text: `KYC case ${decision.toLowerCase()}.` }); void load();
   };
+  return <div className="stack"><Panel title="User directory" subtitle="Search identity, status and account activity"><div className="toolbar"><div className="search"><Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Name, email, phone or user ID" /></div><button onClick={load}>Search</button></div><Table headers={['User', 'Contact', 'KYC', 'Status', 'Last active', 'Actions']}>{users.map((user) => <tr key={user.id}><td><strong>{user.name}</strong><small>{user.id}</small></td><td>{user.email}<small>{user.phone}</small></td><td><Badge value={user.kycStatus} /></td><td><Badge value={user.status} /></td><td>{date(user.lastActiveAt)}</td><td><button className={user.status === 'ACTIVE' ? 'table-danger' : 'table-action'} onClick={() => updateUser(user, user.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE')}>{user.status === 'ACTIVE' ? 'Suspend' : 'Unsuspend'}</button></td></tr>)}</Table></Panel>
+    <Panel title="KYC review queue" subtitle="Approve, reject or ask for more information"><Table headers={['Case', 'User', 'Provider', 'Submitted', 'Status', 'Decision']}>{cases.filter((item) => users.some((user) => user.id === item.userId)).map((item) => <tr key={item.id}><td>{item.id}</td><td>{users.find((user) => user.id === item.userId)?.name || item.userId}</td><td>{item.provider}</td><td>{date(item.submittedAt)}</td><td><Badge value={item.status} /></td><td className="actions"><button className="table-action" onClick={() => decide(item, 'APPROVED')}>Approve</button><button className="table-muted" onClick={() => decide(item, 'MORE_INFORMATION_REQUIRED')}>Request info</button><button className="table-danger" onClick={() => decide(item, 'REJECTED')}>Reject</button></td></tr>)}</Table></Panel></div>;
+}
 
-  const requestEmergencyPause = async () => {
-    setBusy('emergency');
-    try {
-      const result = await request<{ status: string }>('/v1/admin/emergency/trading/pause', { method: 'POST' });
-      setNotice({ tone: 'warning', text: `Trading pause request created: ${result.status}. A second approval is required.` });
-    } catch (error) {
-      setNotice({ tone: 'warning', text: error instanceof Error ? error.message : 'Emergency request failed.' });
-    } finally {
-      setBusy('');
-    }
+function MoneyPage({ mode, type, notice, refresh }: { mode: 'DEMO' | 'LIVE'; type: 'DEPOSIT' | 'WITHDRAWAL'; notice: (value: Notice) => void; refresh: () => void }) {
+  const [items, setItems] = useState<MoneyRequest[]>([]); const [filter, setFilter] = useState('');
+  const load = () => request<{ requests: MoneyRequest[] }>(`/v1/admin/money-requests?mode=${mode}&type=${type}${filter ? `&status=${filter}` : ''}`, {}, mode).then((value) => setItems(value.requests));
+  useEffect(() => { void load(); }, [mode, filter, type]);
+  const decide = async (item: MoneyRequest, decision: string) => {
+    try { await request(`/v1/admin/money-requests/${item.id}/decision`, { method: 'POST', body: JSON.stringify({ decision, reason: `Admin verified ${item.reference}` }) }, mode); notice({ tone: 'success', text: `${item.reference} marked ${decision.toLowerCase()}.` }); void load(); refresh(); }
+    catch (error) { notice({ tone: 'warning', text: error instanceof Error ? error.message : 'Action failed.' }); }
   };
-
-  return (
-    <main>
-      <aside>
-        <div className="brand"><span>NM</span><div><strong>NairaMeme</strong><small>Control plane</small></div></div>
-        {navItems.map((item) => <button className={selected === item ? 'active' : ''} onClick={() => setSelected(item)} key={item}>{item}</button>)}
-      </aside>
-      <section className="content">
-        <header>
-          <div><h1>{selected}</h1><p>Financial controls, provider health, risk and growth systems.</p></div>
-          <button className="danger" onClick={requestEmergencyPause} disabled={busy === 'emergency'}>
-            {busy === 'emergency' ? <LoaderCircle className="spin" /> : <AlertTriangle />} Request trading pause
-          </button>
-        </header>
-        {notice && <div className={notice.tone === 'success' ? 'notice success' : 'notice warning'}>{notice.tone === 'success' ? <CheckCircle2 /> : <AlertTriangle />}<span>{notice.text}</span></div>}
-        {selected === 'Overview' ? (
-          <OverviewWorkspace overview={overview} onProviderTest={testProvider} busy={busy} onCreateCampaign={() => { setCampaignOpen(true); setSelected('Campaigns'); }} />
-        ) : selected === 'Campaigns' ? (
-          <CampaignWorkspace open={campaignOpen} setOpen={setCampaignOpen} setNotice={setNotice} setBusy={setBusy} busy={busy} />
-        ) : selected === 'Providers & API keys' ? (
-          <ProviderWorkspace overview={overview} onProviderTest={testProvider} busy={busy} />
-        ) : (
-          <ModuleWorkspace name={selected} overview={overview} />
-        )}
-      </section>
-    </main>
-  );
+  return <Panel title={`${type === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'} operations`} subtitle="Every decision is recorded in the audit log"><div className="toolbar"><select value={filter} onChange={(e) => setFilter(e.target.value)}><option value="">All statuses</option><option>PENDING</option><option>CONFIRMED</option><option>PAID</option><option>REJECTED</option></select><Badge value={`${items.length} RECORDS`} /></div><Table headers={['Reference', 'User', 'Amount', 'Provider / Bank', 'Created', 'Status', 'Actions']}>{items.map((item) => <tr key={item.id}><td><strong>{item.reference}</strong><small>{item.id}</small></td><td>{item.userId}</td><td>{naira(Number(item.amountMinor) / 100)}<small>Fee {naira(Number(item.feeMinor) / 100)}</small></td><td>{item.bankName || item.provider}<small>{item.accountNumber ? `•••• ${item.accountNumber.slice(-4)}` : item.provider}</small></td><td>{date(item.createdAt)}</td><td><Badge value={item.status} /></td><td className="actions">{item.status === 'PENDING' && <><button className="table-action" onClick={() => decide(item, type === 'DEPOSIT' ? 'CONFIRMED' : 'PAID')}>{type === 'DEPOSIT' ? 'Approve' : 'Mark paid'}</button><button className="table-danger" onClick={() => decide(item, 'REJECTED')}>Reject</button></>}</td></tr>)}</Table></Panel>;
 }
 
-function OverviewWorkspace({ overview, onProviderTest, busy, onCreateCampaign }: { overview: Overview | null; onProviderTest: (key: string) => void; busy: string; onCreateCampaign: () => void }) {
-  return <>
-    <div className="metrics">
-      <Metric icon={<Users />} label="Active users" value={overview?.users.active ?? 0} />
-      <Metric icon={<Banknote />} label="Pending deposits" value={`₦${overview?.money.depositsPendingNgn ?? '0.00'}`} />
-      <Metric icon={<ShieldCheck />} label="Risk cases" value={overview?.operations.openRiskCases ?? 0} />
-      <Metric icon={<Activity />} label="Incidents" value={overview?.operations.activeIncidents ?? 0} />
-    </div>
-    <div className="grid">
-      <ProviderCard overview={overview} onProviderTest={onProviderTest} busy={busy} />
-      <article>
-        <div className="head"><div><h2>Platform switches</h2><p>Sensitive features remain closed until their release gates pass.</p></div><AlertTriangle /></div>
-        <div className="providers">{Object.entries(overview?.features || {}).map(([key, enabled]) => <div className="provider" key={key}><strong>{key}</strong><span className={enabled ? 'ok' : 'off'}>{enabled ? 'Enabled' : 'Disabled'}</span></div>)}</div>
-      </article>
-      <article>
-        <div className="head"><div><h2>Campaign center</h2><p>Email, push and in-app broadcasts with consent segmentation.</p></div><Mail /></div>
-        <div className="empty"><Bell /><strong>No campaign selected</strong><p>Create a draft, verify the provider, request approval, then schedule delivery.</p><button onClick={onCreateCampaign}>Create campaign</button></div>
-      </article>
-      <article>
-        <div className="head"><div><h2>Trading systems</h2><p>Runner AI, Auto Sniper and copy-trading supervision.</p></div><Bot /></div>
-        <div className="empty"><Activity /><strong>No verified live execution provider</strong><p>Real-money actions remain disabled until execution, compliance and custody gates pass.</p></div>
-      </article>
-    </div>
-  </>;
+function TradesPage({ mode }: { mode: 'DEMO' | 'LIVE' }) {
+  const [items, setItems] = useState<Trade[]>([]); useEffect(() => { request<{ trades: Trade[] }>('/v1/admin/trades', {}, mode).then((value) => setItems(value.trades)); }, [mode]);
+  return <Panel title="Trade supervision" subtitle="Confirmed and failed executions including charged fees"><Table headers={['Trade ID', 'User', 'Token', 'Side', 'Gross amount', 'Fee', 'Status', 'Time']}>{items.map((item) => <tr key={item.id}><td>{item.id.slice(0, 16)}…</td><td>{item.userId}</td><td>{item.tokenId}</td><td><Badge value={item.side} /></td><td>{naira(Number(item.amountMinor) / 100)}</td><td>{naira(Number(item.feeMinor) / 100)}</td><td><Badge value={item.status} /></td><td>{date(item.createdAt)}</td></tr>)}</Table></Panel>;
 }
 
-function ProviderWorkspace({ overview, onProviderTest, busy }: { overview: Overview | null; onProviderTest: (key: string) => void; busy: string }) {
-  return <div className="single-grid">
-    <ProviderCard overview={overview} onProviderTest={onProviderTest} busy={busy} />
-    <article>
-      <div className="head"><div><h2>Credential storage</h2><p>API secrets must never be saved in this browser.</p></div><KeyRound /></div>
-      <div className="policy">
-        <strong>Server-side secret manager required</strong>
-        <p>Set <code>SECRET_MANAGER_PROVIDER</code> and enable an audited adapter before credential entry is allowed. The API deliberately rejects secrets until then.</p>
-      </div>
-    </article>
-  </div>;
+function TokensPage({ mode }: { mode: 'DEMO' | 'LIVE' }) {
+  const [tokens, setTokens] = useState<Token[]>([]); useEffect(() => { request<{ tokens: Token[] }>('/v1/admin/tokens', {}, mode).then((value) => setTokens(value.tokens)); }, [mode]);
+  return <Panel title="Runner AI monitor" subtitle="Newest token observations first; no tokens are generated in Live mode"><Table headers={['Token', 'Contract', 'Runner', 'Risk', 'Liquidity', 'Volume', 'Holders', 'Movement', 'Source']}>{tokens.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.symbol}</small></td><td className="mono">{item.mint.slice(0, 8)}…{item.mint.slice(-6)}</td><td><Score value={item.runnerScore} /></td><td><Score value={item.riskScore} risk /></td><td>{naira(item.liquidityNgn)}</td><td>{naira(item.volume24hNgn)}</td><td>{item.holders.toLocaleString()}</td><td className={item.change24h >= 0 ? 'positive' : 'negative'}>{item.change24h > 0 ? '+' : ''}{item.change24h.toFixed(1)}%</td><td>{item.source}</td></tr>)}</Table></Panel>;
 }
 
-function ProviderCard({ overview, onProviderTest, busy }: { overview: Overview | null; onProviderTest: (key: string) => void; busy: string }) {
-  return <article>
-    <div className="head"><div><h2>Provider and API control</h2><p>Statuses come from backend environment checks.</p></div><KeyRound /></div>
-    <div className="providers">{Object.entries(overview?.providers || {}).map(([key, state]) =>
-      <div className="provider" key={key}>
-        <div><strong>{key}</strong><small>{state.status}</small></div>
-        <div className="provider-actions"><span className={state.configured ? 'ok' : 'off'}>{state.configured ? 'Configured' : 'Required'}</span><button className="small-button" onClick={() => onProviderTest(key)} disabled={busy === `provider-${key}`}>{busy === `provider-${key}` ? 'Testing' : 'Test'}</button></div>
-      </div>)}</div>
-  </article>;
+function ProvidersPage({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
+  const [providers, setProviders] = useState<Provider[]>([]); const load = () => request<Provider[]>('/v1/admin/providers', {}, mode).then(setProviders); useEffect(() => { void load(); }, [mode]);
+  const change = async (item: Provider, enabled: boolean) => { await request(`/v1/admin/providers/${item.key}`, { method: 'PATCH', body: JSON.stringify({ enabled, reason: enabled ? 'Enabled by administrator' : 'Disabled by administrator' }) }, mode); notice({ tone: 'success', text: `${item.displayName} ${enabled ? 'enabled' : 'disabled'}.` }); void load(); };
+  const test = async (item: Provider) => { const result = await request<{ message: string }>(`/v1/admin/providers/${item.key}/test`, { method: 'POST' }, mode); notice({ tone: item.configured ? 'success' : 'warning', text: `${item.displayName}: ${result.message}` }); };
+  const grouped = useMemo(() => providers.reduce<Record<string, Provider[]>>((groups, item) => {
+    (groups[item.family] ||= []).push(item);
+    return groups;
+  }, {}), [providers]);
+  return <div className="stack">{Object.entries(grouped).map(([family, items]) => <Panel key={family} title={`${family} providers`} subtitle="Enable, prioritize and test adapters without changing mobile code"><div className="provider-grid">{items?.map((item) => <div className="provider-card" key={item.key}><div><strong>{item.displayName}</strong><small>Priority {item.priority} · {item.secret}</small></div><Badge value={item.status} /><div className="provider-buttons"><button className="table-muted" onClick={() => test(item)}>Test</button><button className={item.enabled ? 'table-danger' : 'table-action'} onClick={() => change(item, !item.enabled)}>{item.enabled ? 'Disable' : 'Enable'}</button></div></div>)}</div></Panel>)}</div>;
 }
 
-function CampaignWorkspace({ open, setOpen, setNotice, setBusy, busy }: { open: boolean; setOpen: (open: boolean) => void; setNotice: (notice: Notice) => void; setBusy: (value: string) => void; busy: string }) {
-  const [form, setForm] = useState({ name: '', subject: '', body: '', channel: 'EMAIL' });
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy('campaign');
-    try {
-      const result = await request<{ status: string }>('/v1/admin/campaigns', {
-        method: 'POST',
-        body: JSON.stringify({ ...form, segment: { marketingConsentRequired: true } })
-      });
-      setNotice({ tone: 'success', text: `Campaign draft created: ${result.status}.` });
-      setOpen(false);
-      setForm({ name: '', subject: '', body: '', channel: 'EMAIL' });
-    } catch (error) {
-      setNotice({ tone: 'warning', text: error instanceof Error ? error.message : 'Campaign draft failed.' });
-    } finally {
-      setBusy('');
-    }
+function AuditPage({ mode }: { mode: 'DEMO' | 'LIVE' }) {
+  const [events, setEvents] = useState<Audit[]>([]); useEffect(() => { request<{ events: Audit[] }>('/v1/admin/audit', {}, mode).then((value) => setEvents(value.events)); }, [mode]);
+  return <Panel title="Immutable action trail" subtitle="Actor, decision, target, reason and time"><Table headers={['Time', 'Actor', 'Action', 'Target', 'Reason']}>{events.map((item) => <tr key={item.id}><td>{date(item.createdAt)}</td><td>{item.actorId}</td><td><strong>{item.action.replaceAll('_', ' ')}</strong></td><td>{item.targetType}<small>{item.targetId}</small></td><td>{item.reason}</td></tr>)}</Table></Panel>;
+}
+
+function OperationalModule({ name, mode }: { name: string; mode: string }) {
+  const guidance: Record<string, string[]> = {
+    'Auto Sniper': ['Global emergency stop', 'Per-user limits', 'Bot PnL and trade history', 'Risk preset versioning'],
+    'Copy Trading': ['Trader eligibility review', 'Risk-adjusted performance', 'Follower allocations', 'Copy profile suspension'],
+    'Campaigns & Earn': ['Bounty creation', 'Submission review', 'Winner approval', 'Consent-aware email and push'],
+    'Fees & Limits': ['Swap fee', 'Bot fee', 'Withdrawal fee', 'KYC-tier daily limits'],
+    Incidents: ['Create incident', 'Assign severity', 'Link affected records', 'Resolve with audit notes']
   };
-
-  return <div className="single-grid">
-    <article>
-      <div className="head"><div><h2>Broadcast campaigns</h2><p>Marketing consent filtering and second-admin approval are mandatory.</p></div><Mail /></div>
-      {!open ? <div className="empty"><Bell /><strong>No draft open</strong><p>Create a controlled message for opted-in recipients.</p><button onClick={() => setOpen(true)}>Create campaign</button></div> :
-        <form onSubmit={submit}>
-          <label>Campaign name<input required minLength={3} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
-          <label>Channel<select value={form.channel} onChange={(e) => setForm({ ...form, channel: e.target.value })}><option>EMAIL</option><option>PUSH</option><option>IN_APP</option></select></label>
-          <label>Subject<input maxLength={160} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} /></label>
-          <label>Message<textarea required rows={8} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} /></label>
-          <div className="form-actions"><button type="button" className="secondary" onClick={() => setOpen(false)}>Cancel</button><button type="submit" disabled={busy === 'campaign'}>{busy === 'campaign' ? 'Checking provider...' : 'Create approval draft'}</button></div>
-        </form>}
-    </article>
-  </div>;
+  return <Panel title={name} subtitle={`${mode} control surface`}><div className="module-list">{(guidance[name] || []).map((item) => <div key={item}><CheckCircle2 /><span>{item}</span><Badge value="BACKEND CONTRACT NEXT" /></div>)}</div><p className="module-note">This module does not perform a fake action. Its real workflow requires the corresponding persistence and provider adapter before activation.</p></Panel>;
 }
 
-function ModuleWorkspace({ name, overview }: { name: string; overview: Overview | null }) {
-  const readiness = name === 'Deposits' || name === 'Withdrawals' ? overview?.providers.payments?.configured : name === 'Trades' || name === 'Auto Sniper' || name === 'Copy trading' ? overview?.providers.trading?.configured : false;
-  return <div className="single-grid"><article><div className="head"><div><h2>{name}</h2><p>This module is represented in the production data model and release controls.</p></div><ShieldCheck /></div><div className="empty"><Activity /><strong>{readiness ? 'Provider configured; audited workflow pending' : 'Release gate not ready'}</strong><p>No operation will be simulated. Configure the required provider, authentication, approvals and audit storage before enabling this module.</p></div></article></div>;
-}
-
-function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | number }) {
-  return <div className="metric">{icon}<div><small>{label}</small><strong>{value}</strong></div></div>;
-}
+function Metric({ label, value, icon }: { label: string; value: string | number; icon: ReactNode }) { return <div className="metric">{icon}<div><small>{label}</small><strong>{value}</strong></div></div>; }
+function Panel({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) { return <section className="panel"><div className="panel-head"><div><h2>{title}</h2><p>{subtitle}</p></div></div>{children}</section>; }
+function Table({ headers, children }: { headers: string[]; children: ReactNode }) { return <div className="table-wrap"><table><thead><tr>{headers.map((item) => <th key={item}>{item}</th>)}</tr></thead><tbody>{children}</tbody></table></div>; }
+function Badge({ value }: { value: string }) { const good = /ACTIVE|APPROVED|CONNECTED|CONFIRMED|PAID|BUY/.test(value); const bad = /SUSPENDED|REJECTED|FAILED|DISABLED|SELL/.test(value); return <span className={`badge ${good ? 'good' : bad ? 'bad' : 'warn'}`}>{value.replaceAll('_', ' ')}</span>; }
+function Score({ value, risk = false }: { value: number; risk?: boolean }) { const good = risk ? value < 40 : value >= 80; return <span className={`score ${good ? 'score-good' : 'score-warn'}`}>{value}</span>; }
+function naira(value: string | number | undefined) { return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 2 }).format(Number(value || 0)); }
+function date(value?: string) { return value ? new Date(value).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' }) : 'Not submitted'; }
 
 createRoot(document.getElementById('root')!).render(<App />);

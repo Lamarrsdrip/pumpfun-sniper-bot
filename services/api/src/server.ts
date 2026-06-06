@@ -1,167 +1,332 @@
-import Fastify, { FastifyError, FastifyReply } from 'fastify';
+import Fastify, { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
-import { timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { z, ZodError } from 'zod';
 import { config } from './config.js';
+import { aiBudgetStatus, explainWithBudget } from './ai.js';
+import { issueSession, resolveSession } from './domain/auth.js';
+import { accountBalanceMinor, ensureSufficientBalance, postLedgerTransaction, userWalletBalanceMinor } from './domain/ledger.js';
+import { seedDemoData } from './domain/seed.js';
+import { createMemoryStore, type MemoryStore } from './domain/store.js';
+import type { AuditEvent, Mode, MoneyRequest, ProviderConfig, Trade, User } from './domain/types.js';
 
 type AppOptions = {
   environment?: string;
   adminApiToken?: string;
   adminOrigins?: string[];
+  store?: MemoryStore;
 };
+
+const money = z.coerce.number().positive().max(100_000_000);
 
 export async function buildApp(options: AppOptions = {}) {
   const environment = options.environment ?? config.environment;
   const adminApiToken = options.adminApiToken ?? config.adminApiToken;
   const adminOrigins = options.adminOrigins ?? config.adminOrigins;
+  const store = options.store ?? createMemoryStore(environment === 'production' ? emptyState() : seedDemoData());
+  const botSettings = new Map<string, { active: boolean; riskLevel: string; maxTradeNgn: number; takeProfitPercent: number; stopLossPercent: number; dailyLossLimitPercent: number }>();
   const app = Fastify({ logger: false, requestIdHeader: 'x-request-id' });
   await app.register(cors, {
     origin(origin, callback) {
-      if (!origin || adminOrigins.includes(origin)) return callback(null, true);
+      if (!origin || adminOrigins.includes(origin) || environment !== 'production') return callback(null, true);
       return callback(null, false);
     }
   });
   await app.register(helmet);
-  await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
+  await app.register(rateLimit, { max: 180, timeWindow: '1 minute' });
 
   app.addHook('preHandler', async (request, reply) => {
     if (!request.url.startsWith('/v1/admin') || environment !== 'production') return;
-    if (!adminApiToken) {
-      return reply.status(503).send({
-        code: 'ADMIN_AUTH_NOT_CONFIGURED',
-        message: 'Admin authentication is not configured.'
-      });
-    }
+    if (!adminApiToken) return reply.status(503).send({ code: 'ADMIN_AUTH_NOT_CONFIGURED', message: 'Admin authentication is not configured.' });
     const supplied = request.headers.authorization?.replace(/^Bearer\s+/i, '') || '';
-    if (!safeTokenEqual(supplied, adminApiToken)) {
-      return reply.status(401).send({
-        code: 'ADMIN_UNAUTHORIZED',
-        message: 'A valid admin authorization token is required.'
-      });
-    }
+    if (!safeTokenEqual(supplied, adminApiToken)) return reply.status(401).send({ code: 'ADMIN_UNAUTHORIZED', message: 'A valid admin authorization token is required.' });
   });
 
   app.setErrorHandler((error, request, reply) => {
-    if (error instanceof ZodError) {
-      return reply.status(400).send({
-        code: 'VALIDATION_ERROR',
-        message: 'One or more request fields are invalid.',
-        requestId: request.id,
-        details: error.flatten()
-      });
-    }
-    const typedError = error as FastifyError;
-    request.log.error(typedError);
-    reply.status(typedError.statusCode || 500).send({
-      code: typedError.statusCode ? 'REQUEST_FAILED' : 'INTERNAL_ERROR',
-      message: typedError.statusCode ? typedError.message : 'The request could not be completed.',
+    if (error instanceof ZodError) return reply.status(400).send({ code: 'VALIDATION_ERROR', message: 'One or more request fields are invalid.', requestId: request.id, details: error.flatten() });
+    const typed = error as FastifyError & { code?: string };
+    request.log.error(typed);
+    reply.status(typed.statusCode || 500).send({
+      code: typed.code || (typed.statusCode ? 'REQUEST_FAILED' : 'INTERNAL_ERROR'),
+      message: typed.statusCode ? typed.message : 'The request could not be completed.',
       requestId: request.id
     });
   });
 
-  app.get('/health', async () => ({
-    ok: true,
-    service: 'nairameme-api',
-    environment,
-    providers: providerStates(),
-    features: config.flags
-  }));
+  app.get('/health', async () => statusPayload(environment, store));
+  app.get('/api/status', async () => statusPayload(environment, store));
 
-  app.get('/v1/mobile/home', async () => ({
-    wallet: {
-      availableNgn: '0.00',
-      reservedNgn: '0.00',
-      portfolioNgn: '0.00',
-      todayPnlNgn: '0.00',
-      totalEquityNgn: '0.00'
-    },
-    runner: null,
-    alerts: [],
-    providerState: {
-      ready: config.providers.marketData,
-      message: config.providers.marketData
-        ? 'Scanner connected. Waiting for a qualified, verified runner.'
-        : 'Market data providers are not configured. No token data will be fabricated.'
-    }
-  }));
-
-  app.get('/v1/tokens', async () => ({ tokens: [] }));
-
+  app.post('/v1/auth/demo', async (request, reply) => {
+    if (environment === 'production') return reply.status(404).send({ code: 'NOT_FOUND', message: 'Demo access is unavailable.' });
+    const body = z.object({ userId: z.string().default('demo-user-ada') }).parse(request.body || {});
+    const user = store.getUser(body.userId);
+    if (!user || user.mode !== 'DEMO') return reply.status(404).send({ code: 'DEMO_USER_NOT_FOUND', message: 'Demo user not found.' });
+    return { ...issueSession(store, user.id), user };
+  });
   app.post('/v1/auth/start', async (request, reply) => {
     z.object({ identifier: z.string().trim().min(5).max(254) }).parse(request.body);
     return providerRequired(reply, 'identity', 'Phone and email authentication provider is not configured.');
   });
-  app.post('/v1/kyc/session', async (_, reply) => providerRequired(reply, 'kyc', 'KYC provider is not configured.'));
-  app.post('/v1/deposits', async (_, reply) => providerRequired(reply, 'payments', 'Naira deposit provider is not configured.'));
-  app.post('/v1/withdrawals', async (_, reply) => providerRequired(reply, 'payments', 'Naira withdrawal provider is not configured.'));
-  app.post('/v1/trades/quote', async (_, reply) => providerRequired(reply, 'trading', 'Trading provider is not configured.'));
-  app.post('/v1/trades/execute', async (_, reply) => providerRequired(reply, 'trading', 'Trading provider is not configured.'));
+  app.get('/v1/auth/me', async (request, reply) => {
+    const user = authenticatedUser(request, store);
+    return user ? { user } : reply.status(401).send({ code: 'UNAUTHORIZED', message: 'Sign in is required.' });
+  });
+
+  app.get('/v1/mobile/home', async (request) => {
+    const context = requestContext(request, store);
+    const tokens = store.listTokens(context.mode);
+    const walletMinor = userWalletBalanceMinor(store, context.user.id, context.mode);
+    const positions = store.listPositions({ userId: context.user.id, mode: context.mode });
+    const marketValueMinor = positions.reduce((sum, position) => {
+      const token = tokens.find((item) => item.id === position.tokenId);
+      return sum + (token ? toMinor(Number(position.quantity) * Number(token.priceNgn)) : 0n);
+    }, 0n);
+    return {
+      mode: context.mode,
+      demoNotice: context.mode === 'DEMO' ? 'Demo Mode - Not Real Money' : undefined,
+      user: context.user,
+      wallet: {
+        availableNgn: fromMinor(walletMinor),
+        reservedNgn: '0.00',
+        portfolioNgn: fromMinor(marketValueMinor),
+        todayPnlNgn: '0.00',
+        totalEquityNgn: fromMinor(walletMinor + marketValueMinor)
+      },
+      runner: tokens[0] ? {
+        mint: tokens[0].mint,
+        name: tokens[0].name,
+        symbol: tokens[0].symbol,
+        runnerScore: tokens[0].runnerScore,
+        category: runnerCategory(tokens[0].runnerScore, tokens[0].riskScore),
+        explanation: `${tokens[0].holders.toLocaleString()} holders, ${tokens[0].change24h.toFixed(1)}% momentum and ${tokens[0].riskScore}/100 risk.`
+      } : null,
+      alerts: store.listAlerts(context.mode),
+      bounties: store.listBounties(context.mode),
+      providerState: marketState(context.mode)
+    };
+  });
+  app.get('/v1/tokens', async (request) => {
+    const context = requestContext(request, store);
+    return { mode: context.mode, demoNotice: context.mode === 'DEMO' ? 'Demo Mode - Not Real Money' : undefined, tokens: store.listTokens(context.mode) };
+  });
+  app.get('/v1/tokens/:mint', async (request, reply) => {
+    const context = requestContext(request, store);
+    const mint = z.string().parse((request.params as { mint: string }).mint);
+    const token = store.listTokens(context.mode).find((item) => item.mint === mint);
+    return token ? { token, explanation: tokenExplanation(token), ai: await explainWithBudget(token) } : reply.status(404).send({ code: 'TOKEN_NOT_FOUND', message: 'Token not found in this mode.' });
+  });
+  app.get('/v1/portfolio', async (request) => {
+    const context = requestContext(request, store);
+    const positions = store.listPositions({ mode: context.mode, userId: context.user.id }).map((position) => ({
+      ...position,
+      token: store.listTokens(context.mode).find((item) => item.id === position.tokenId)
+    }));
+    return {
+      mode: context.mode,
+      balanceNgn: fromMinor(userWalletBalanceMinor(store, context.user.id, context.mode)),
+      positions,
+      trades: store.listTrades({ mode: context.mode, userId: context.user.id }),
+      transactions: store.listMoneyRequests({ mode: context.mode, userId: context.user.id })
+    };
+  });
+  app.get('/v1/bounties', async (request) => {
+    const context = requestContext(request, store);
+    return { bounties: store.listBounties(context.mode) };
+  });
+  app.get('/v1/bot/settings', async (request) => {
+    const context = requestContext(request, store);
+    return { mode: context.mode, settings: botSettings.get(context.user.id) || { active: false, riskLevel: 'BALANCED', maxTradeNgn: 10000, takeProfitPercent: 30, stopLossPercent: 12, dailyLossLimitPercent: 5 } };
+  });
+  app.put('/v1/bot/settings', async (request, reply) => {
+    const context = requestContext(request, store);
+    const body = z.object({ active: z.boolean(), riskLevel: z.enum(['SAFE', 'BALANCED', 'SNIPER']), maxTradeNgn: z.number().min(500).max(1_000_000), takeProfitPercent: z.number().min(5).max(500), stopLossPercent: z.number().min(2).max(30), dailyLossLimitPercent: z.number().min(1).max(20) }).parse(request.body);
+    if (context.mode === 'LIVE' && body.active) return reply.status(409).send({ code: 'LIVE_BOT_DISABLED', message: 'Live Auto Sniper requires an audited execution adapter, verified KYC and custody controls.' });
+    botSettings.set(context.user.id, body);
+    return { mode: context.mode, settings: body, message: body.active ? 'Demo Auto Sniper monitoring started. Trades still obey backend limits.' : 'Auto Sniper stopped.' };
+  });
+
+  app.post('/v1/kyc/session', async (request, reply) => {
+    const context = optionalContext(request, store);
+    if (context?.mode === 'DEMO') {
+      const current = store.listKycCases().find((item) => item.userId === context.user.id);
+      return { mode: 'DEMO', status: current?.status || context.user.kycStatus, message: 'Demo KYC journey is available without submitting real identity documents.' };
+    }
+    return providerRequired(reply, 'kyc', 'KYC provider is not configured.');
+  });
+  app.post('/v1/deposits', async (request, reply) => {
+    const context = requestContext(request, store);
+    const body = z.object({ amountNgn: money }).parse(request.body);
+    if (context.mode === 'LIVE') return providerRequired(reply, 'payments', 'Naira deposit provider is not configured.');
+    const record = createMoneyRequest(context.user, 'DEPOSIT', body.amountNgn, 'Demo Bank Rail');
+    store.saveMoneyRequest(record);
+    return reply.status(201).send({ request: record, instructions: { bank: 'NairaMeme Demo Bank', accountName: 'NairaMeme / Ada Nwosu', accountNumber: '0001234567', reference: record.reference } });
+  });
+  app.post('/v1/withdrawals', async (request, reply) => {
+    const context = requestContext(request, store);
+    const body = z.object({ amountNgn: money, bankName: z.string().min(2), accountNumber: z.string().regex(/^\d{10}$/), accountName: z.string().min(2) }).parse(request.body);
+    if (context.mode === 'LIVE') return providerRequired(reply, 'payments', 'Naira withdrawal provider is not configured.');
+    const feeMinor = toMinor(Math.max(50, body.amountNgn * 0.005));
+    const amountMinor = toMinor(body.amountNgn);
+    const wallet = requiredWallet(store, context.user.id, context.mode);
+    ensureSufficientBalance(store, wallet.id, amountMinor + feeMinor);
+    const record = { ...createMoneyRequest(context.user, 'WITHDRAWAL', body.amountNgn, 'Demo Bank Rail'), feeMinor: feeMinor.toString(), bankName: body.bankName, accountNumber: body.accountNumber, accountName: body.accountName };
+    store.saveMoneyRequest(record);
+    return reply.status(201).send({ request: record });
+  });
+  app.post('/v1/trades/quote', async (request, reply) => {
+    const context = requestContext(request, store);
+    const body = z.object({ mint: z.string().min(20), side: z.enum(['BUY', 'SELL']), amountNgn: money }).parse(request.body);
+    const token = store.listTokens(context.mode).find((item) => item.mint === body.mint);
+    if (!token) return reply.status(404).send({ code: 'TOKEN_NOT_FOUND', message: 'Token not found in this mode.' });
+    if (context.mode === 'LIVE') return providerRequired(reply, 'trading', 'Trading provider is not configured.');
+    const fee = Math.max(25, body.amountNgn * 0.01);
+    return { quoteId: `quote_${randomUUID()}`, expiresAt: new Date(Date.now() + 30_000).toISOString(), token, side: body.side, amountNgn: body.amountNgn.toFixed(2), feeNgn: fee.toFixed(2), estimatedQuantity: ((body.amountNgn - fee) / Number(token.priceNgn)).toFixed(6), slippagePercent: 1.5, mode: context.mode };
+  });
+  app.post('/v1/trades/execute', async (request, reply) => {
+    const context = requestContext(request, store);
+    const body = z.object({ mint: z.string().min(20), side: z.enum(['BUY', 'SELL']), amountNgn: money, idempotencyKey: z.string().min(8).max(120) }).parse(request.body);
+    if (context.mode === 'LIVE') return providerRequired(reply, 'trading', 'Trading provider is not configured.');
+    const token = store.listTokens(context.mode).find((item) => item.mint === body.mint);
+    if (!token) return reply.status(404).send({ code: 'TOKEN_NOT_FOUND', message: 'Token not found in this mode.' });
+    const wallet = requiredWallet(store, context.user.id, context.mode);
+    const platform = requiredPlatformWallet(store, context.mode);
+    const grossMinor = toMinor(body.amountNgn);
+    const feeMinor = toMinor(Math.max(25, body.amountNgn * 0.01));
+    let position = store.getPosition(context.user.id, token.id, context.mode);
+    if (body.side === 'BUY') {
+      ensureSufficientBalance(store, wallet.id, grossMinor);
+      postLedgerTransaction(store, { mode: context.mode, idempotencyKey: body.idempotencyKey, description: `Buy ${token.symbol}`, entries: [{ accountId: wallet.id, side: 'DEBIT', amountMinor: grossMinor.toString() }, { accountId: platform.id, side: 'CREDIT', amountMinor: grossMinor.toString() }] });
+      const quantity = Number(fromMinor(grossMinor - feeMinor)) / Number(token.priceNgn);
+      position = store.savePosition({ id: position?.id || `pos_${randomUUID()}`, mode: context.mode, userId: context.user.id, tokenId: token.id, quantity: String(Number(position?.quantity || 0) + quantity), costMinor: String(BigInt(position?.costMinor || 0) + grossMinor), updatedAt: new Date().toISOString() });
+    } else {
+      if (!position) return reply.status(409).send({ code: 'NO_POSITION', message: 'There is no position to sell.' });
+      const quantity = Math.min(Number(position.quantity), body.amountNgn / Number(token.priceNgn));
+      const proceedsMinor = toMinor(quantity * Number(token.priceNgn));
+      postLedgerTransaction(store, { mode: context.mode, idempotencyKey: body.idempotencyKey, description: `Sell ${token.symbol}`, entries: [{ accountId: platform.id, side: 'DEBIT', amountMinor: (proceedsMinor - feeMinor).toString() }, { accountId: wallet.id, side: 'CREDIT', amountMinor: (proceedsMinor - feeMinor).toString() }] });
+      const remaining = Number(position.quantity) - quantity;
+      if (remaining <= 0.000001) store.removePosition(position.id);
+      else position = store.savePosition({ ...position, quantity: String(remaining), costMinor: String(BigInt(position.costMinor) * BigInt(Math.round(remaining * 1_000_000)) / BigInt(Math.round(Number(position.quantity) * 1_000_000))), updatedAt: new Date().toISOString() });
+    }
+    const trade: Trade = { id: `trade_${randomUUID()}`, mode: context.mode, userId: context.user.id, tokenId: token.id, side: body.side, amountMinor: grossMinor.toString(), feeMinor: feeMinor.toString(), quantity: position?.quantity || '0', priceNgn: token.priceNgn, status: 'CONFIRMED', createdAt: new Date().toISOString() };
+    store.saveTrade(trade);
+    return reply.status(201).send({ trade, position, balanceNgn: fromMinor(userWalletBalanceMinor(store, context.user.id, context.mode)), warning: 'Demo execution only. No blockchain transaction occurred.' });
+  });
   app.post('/v1/copy-allocations', async (_, reply) => featureRequired(reply, 'copyTrading', 'Copy trading is disabled until compliance and execution controls are approved.'));
 
-  app.get('/v1/admin/overview', async () => ({
-    users: { total: 0, active: 0, restricted: 0, pendingKyc: 0 },
-    money: { depositsPendingNgn: '0.00', withdrawalsPendingNgn: '0.00', revenueTodayNgn: '0.00' },
-    operations: { openRiskCases: 0, pendingApprovals: 0, activeIncidents: 0 },
-    providers: providerStates(),
-    features: config.flags
-  }));
-
-  app.get('/v1/admin/providers', async () => Object.entries(providerStates()).map(([key, value]) => ({
-    key,
-    displayName: providerName(key),
-    ...value,
-    secret: value.configured ? 'configured (masked)' : 'not configured'
-  })));
-
+  app.get('/v1/admin/overview', async (request) => {
+    const mode = adminMode(request);
+    const users = store.listUsers({ mode });
+    const requests = store.listMoneyRequests({ mode });
+    const trades = store.listTrades({ mode });
+    return {
+      mode,
+      users: { total: users.length, active: users.filter((item) => item.status === 'ACTIVE').length, restricted: users.filter((item) => item.status === 'SUSPENDED').length, pendingKyc: users.filter((item) => item.kycStatus === 'PENDING_REVIEW').length },
+      money: {
+        depositsTodayNgn: sumMoney(requests.filter((item) => item.type === 'DEPOSIT' && item.status === 'CONFIRMED')),
+        withdrawalsTodayNgn: sumMoney(requests.filter((item) => item.type === 'WITHDRAWAL')),
+        depositsPendingNgn: sumMoney(requests.filter((item) => item.type === 'DEPOSIT' && item.status === 'PENDING')),
+        withdrawalsPendingNgn: sumMoney(requests.filter((item) => item.type === 'WITHDRAWAL' && item.status === 'PENDING')),
+        tradingVolumeNgn: fromMinor(trades.reduce((sum, item) => sum + BigInt(item.amountMinor), 0n)),
+        revenueTodayNgn: fromMinor(trades.reduce((sum, item) => sum + BigInt(item.feeMinor), 0n))
+      },
+      operations: { openRiskCases: 0, pendingApprovals: requests.filter((item) => item.status === 'PENDING').length + users.filter((item) => item.kycStatus === 'PENDING_REVIEW').length, activeIncidents: 0 },
+      providers: providerStateMap(store),
+      features: config.flags
+    };
+  });
+  app.get('/v1/admin/users', async (request) => {
+    const query = z.object({ q: z.string().optional(), mode: z.enum(['DEMO', 'LIVE']).optional() }).parse(request.query);
+    return { users: store.listUsers({ mode: query.mode || adminMode(request), query: query.q }) };
+  });
+  app.get('/v1/admin/users/:id', async (request, reply) => {
+    const user = store.getUser((request.params as { id: string }).id);
+    if (!user) return reply.status(404).send({ code: 'USER_NOT_FOUND', message: 'User not found.' });
+    return { user, wallets: walletSummaries(store, user), trades: store.listTrades({ userId: user.id, mode: user.mode }), transactions: store.listMoneyRequests({ userId: user.id, mode: user.mode }) };
+  });
+  app.patch('/v1/admin/users/:id', async (request, reply) => {
+    const user = store.getUser((request.params as { id: string }).id);
+    if (!user) return reply.status(404).send({ code: 'USER_NOT_FOUND', message: 'User not found.' });
+    const body = z.object({ status: z.enum(['ACTIVE', 'SUSPENDED']).optional(), note: z.string().min(2).max(500).optional(), reason: z.string().min(3).max(500) }).parse(request.body);
+    const updated = store.saveUser({ ...user, status: body.status || user.status, notes: body.note ? [...user.notes, body.note] : user.notes });
+    audit(store, request, 'USER_UPDATED', 'USER', user.id, body.reason, user, updated);
+    return { user: updated };
+  });
+  app.get('/v1/admin/kyc', async () => ({ cases: store.listKycCases() }));
+  app.post('/v1/admin/kyc/:id/decision', async (request, reply) => {
+    const current = store.getKycCase((request.params as { id: string }).id);
+    if (!current) return reply.status(404).send({ code: 'KYC_NOT_FOUND', message: 'KYC case not found.' });
+    const body = z.object({ decision: z.enum(['APPROVED', 'REJECTED', 'MORE_INFORMATION_REQUIRED']), reason: z.string().min(3).max(500) }).parse(request.body);
+    const updated = store.saveKycCase({ ...current, status: body.decision, reviewReason: body.reason, reviewedAt: new Date().toISOString() });
+    const user = store.getUser(current.userId);
+    if (user) store.saveUser({ ...user, kycStatus: body.decision });
+    audit(store, request, 'KYC_DECISION', 'KYC_CASE', current.id, body.reason, current, updated);
+    return { case: updated };
+  });
+  app.get('/v1/admin/money-requests', async (request) => {
+    const query = z.object({ type: z.enum(['DEPOSIT', 'WITHDRAWAL']).optional(), status: z.enum(['PENDING', 'CONFIRMED', 'REJECTED', 'PAID']).optional(), mode: z.enum(['DEMO', 'LIVE']).optional() }).parse(request.query);
+    return { requests: store.listMoneyRequests({ ...query, mode: query.mode || adminMode(request) }) };
+  });
+  app.post('/v1/admin/money-requests/:id/decision', async (request, reply) => {
+    const current = store.getMoneyRequest((request.params as { id: string }).id);
+    if (!current) return reply.status(404).send({ code: 'REQUEST_NOT_FOUND', message: 'Money request not found.' });
+    const body = z.object({ decision: z.enum(['CONFIRMED', 'REJECTED', 'PAID']), reason: z.string().min(3).max(500) }).parse(request.body);
+    if (current.mode === 'LIVE' && body.decision !== 'REJECTED') return reply.status(409).send({ code: 'LIVE_MANUAL_CREDIT_DISABLED', message: 'Live credits require an enabled payment adapter and verified provider event.' });
+    const updated = store.saveMoneyRequest({ ...current, status: body.decision, updatedAt: new Date().toISOString() });
+    if (current.type === 'DEPOSIT' && body.decision === 'CONFIRMED') {
+      const wallet = requiredWallet(store, current.userId, current.mode);
+      const platform = requiredPlatformWallet(store, current.mode);
+      postLedgerTransaction(store, { mode: current.mode, idempotencyKey: `deposit-${current.id}`, description: `Confirmed deposit ${current.reference}`, entries: [{ accountId: platform.id, side: 'DEBIT', amountMinor: current.amountMinor }, { accountId: wallet.id, side: 'CREDIT', amountMinor: current.amountMinor }] });
+    }
+    if (current.type === 'WITHDRAWAL' && body.decision === 'PAID') {
+      const wallet = requiredWallet(store, current.userId, current.mode);
+      const platform = requiredPlatformWallet(store, current.mode);
+      const total = BigInt(current.amountMinor) + BigInt(current.feeMinor);
+      ensureSufficientBalance(store, wallet.id, total);
+      postLedgerTransaction(store, { mode: current.mode, idempotencyKey: `withdrawal-${current.id}`, description: `Paid withdrawal ${current.reference}`, entries: [{ accountId: wallet.id, side: 'DEBIT', amountMinor: total.toString() }, { accountId: platform.id, side: 'CREDIT', amountMinor: total.toString() }] });
+    }
+    audit(store, request, 'MONEY_REQUEST_DECISION', current.type, current.id, body.reason, current, updated);
+    return { request: updated };
+  });
+  app.get('/v1/admin/trades', async (request) => ({ trades: store.listTrades({ mode: adminMode(request) }) }));
+  app.get('/v1/admin/tokens', async (request) => ({ tokens: store.listTokens(adminMode(request)) }));
+  app.get('/v1/admin/audit', async () => ({ events: store.listAudit() }));
+  app.get('/v1/admin/ai/settings', async () => aiBudgetStatus());
+  app.get('/v1/admin/providers', async () => Object.values(providerStateMap(store)));
+  app.patch('/v1/admin/providers/:key', async (request, reply) => {
+    const key = z.string().parse((request.params as { key: string }).key);
+    const current = store.getProvider(key) || defaultProviders().find((item) => item.key === key);
+    if (!current) return reply.status(404).send({ code: 'UNKNOWN_PROVIDER', message: 'Unknown provider.' });
+    const body = z.object({ enabled: z.boolean().optional(), priority: z.number().int().min(1).max(100).optional(), publicConfig: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(), reason: z.string().min(3) }).parse(request.body);
+    const updated = store.saveProvider({ ...current, enabled: body.enabled ?? current.enabled, priority: body.priority ?? current.priority, publicConfig: body.publicConfig ?? current.publicConfig, status: body.enabled === false ? 'DISABLED' : current.configured ? 'CONNECTED' : 'UNCONFIGURED' });
+    audit(store, request, 'PROVIDER_UPDATED', 'PROVIDER', key, body.reason, current, updated);
+    return { provider: updated };
+  });
   app.post('/v1/admin/providers/:key/test', async (request, reply) => {
     const key = z.string().parse((request.params as { key: string }).key);
-    const state = providerStates()[key as keyof ReturnType<typeof providerStates>];
-    if (!state) return reply.status(404).send({ code: 'UNKNOWN_PROVIDER', message: 'Unknown provider.' });
-    return { key, ...state, testedAt: new Date().toISOString() };
+    const provider = providerStateMap(store)[key];
+    if (!provider) return reply.status(404).send({ code: 'UNKNOWN_PROVIDER', message: 'Unknown provider.' });
+    return { ...provider, testedAt: new Date().toISOString(), message: provider.configured ? 'Configuration is present. Network health checks run only in the deployed backend.' : 'Required credentials are missing.' };
   });
-
   app.post('/v1/admin/providers/:key/configure', async (request, reply) => {
     const key = z.string().parse((request.params as { key: string }).key);
-    if (!(key in providerStates())) return reply.status(404).send({ code: 'UNKNOWN_PROVIDER', message: 'Unknown provider.' });
-    z.object({
-      secret: z.string().min(8).max(10_000),
-      publicConfig: z.record(z.string(), z.unknown()).default({})
-    }).parse(request.body);
-    if (!config.secretManager) {
-      return reply.status(503).send({
-        code: 'SECRET_MANAGER_NOT_CONFIGURED',
-        message: 'Configure a server-side secret manager before storing provider credentials.'
-      });
-    }
-    return reply.status(501).send({
-      code: 'SECRET_MANAGER_ADAPTER_PENDING',
-      message: 'The secret manager is selected, but its audited storage adapter is not enabled.'
-    });
+    const known = key in providerStateMap(store) || ['payments', 'identity', 'marketData', 'solanaRpc', 'kyc', 'email', 'push', 'trading', 'ai'].includes(key);
+    if (!known) return reply.status(404).send({ code: 'UNKNOWN_PROVIDER', message: 'Unknown provider.' });
+    z.object({ secret: z.string().min(8).max(10_000), publicConfig: z.record(z.string(), z.unknown()).default({}) }).parse(request.body);
+    if (!config.secretManager) return reply.status(503).send({ code: 'SECRET_MANAGER_NOT_CONFIGURED', message: 'Configure a server-side secret manager before storing provider credentials.' });
+    return reply.status(501).send({ code: 'SECRET_MANAGER_ADAPTER_PENDING', message: 'The secret manager is selected, but its audited storage adapter is not enabled.' });
   });
-
   app.post('/v1/admin/campaigns', async (request, reply) => {
     const campaign = CampaignSchema.parse(request.body);
-    if (campaign.channel === 'EMAIL' && !config.providers.email) {
-      return reply.status(409).send({ code: 'EMAIL_PROVIDER_MISSING', message: 'Configure the email provider before approving this campaign.' });
-    }
-    return reply.status(201).send({
-      id: crypto.randomUUID(),
-      status: 'PENDING_APPROVAL',
-      ...campaign,
-      createdAt: new Date().toISOString(),
-      note: 'Campaigns require recipient consent filtering and second-admin approval before send.'
-    });
+    if (campaign.channel === 'EMAIL' && !config.providers.email) return reply.status(409).send({ code: 'EMAIL_PROVIDER_MISSING', message: 'Configure the email provider before approving this campaign.' });
+    return reply.status(201).send({ id: randomUUID(), status: 'PENDING_APPROVAL', ...campaign, createdAt: new Date().toISOString(), note: 'Campaigns require recipient consent filtering and second-admin approval before send.' });
   });
-
-  app.post('/v1/admin/emergency/:component/pause', async (request, reply) => reply.status(202).send({
-    component: (request.params as { component: string }).component,
-    paused: false,
-    status: 'PENDING_APPROVAL',
-    approvalRequired: true,
-    recordedAt: new Date().toISOString()
-  }));
+  app.post('/v1/admin/emergency/:component/pause', async (request, reply) => {
+    const component = (request.params as { component: string }).component;
+    audit(store, request, 'EMERGENCY_PAUSE_REQUESTED', 'SYSTEM', component, 'Emergency pause requested', undefined, { status: 'PENDING_APPROVAL' });
+    return reply.status(202).send({ component, paused: false, status: 'PENDING_APPROVAL', approvalRequired: true, recordedAt: new Date().toISOString() });
+  });
 
   return app;
 }
@@ -171,15 +336,113 @@ const CampaignSchema = z.object({
   channel: z.enum(['EMAIL', 'PUSH', 'IN_APP']),
   subject: z.string().max(160).optional(),
   body: z.string().min(1).max(20_000),
-  segment: z.object({
-    subscriptionTier: z.array(z.enum(['FREE', 'PRO', 'ELITE'])).optional(),
-    kycStatus: z.array(z.string()).optional(),
-    marketingConsentRequired: z.boolean().default(true)
-  })
+  segment: z.object({ subscriptionTier: z.array(z.enum(['FREE', 'PRO', 'ELITE'])).optional(), kycStatus: z.array(z.string()).optional(), marketingConsentRequired: z.boolean().default(true) })
 });
 
-function providerRequired(reply: FastifyReply, provider: keyof typeof config.providers, message: string) {
-  if (!config.providers[provider]) return reply.status(503).send({ code: 'PROVIDER_NOT_CONFIGURED', message });
+function requestContext(request: FastifyRequest, store: MemoryStore) {
+  return optionalContext(request, store) || { mode: 'DEMO' as Mode, user: store.getUser('demo-user-ada')! };
+}
+
+function optionalContext(request: FastifyRequest, store: MemoryStore) {
+  const token = request.headers.authorization?.replace(/^Bearer\s+/i, '') || '';
+  const user = token ? resolveSession(store, token) : undefined;
+  if (user) return { mode: user.mode, user };
+  if (!request.headers['x-app-mode']) return undefined;
+  const mode = String(request.headers['x-app-mode']).toUpperCase() as Mode;
+  if (mode === 'LIVE') {
+    const live = store.listUsers({ mode: 'LIVE' })[0];
+    if (live) return { mode, user: live };
+  }
+  const demo = store.getUser('demo-user-ada');
+  return demo ? { mode: 'DEMO' as Mode, user: demo } : undefined;
+}
+
+function authenticatedUser(request: FastifyRequest, store: MemoryStore) {
+  const token = request.headers.authorization?.replace(/^Bearer\s+/i, '') || '';
+  return token ? resolveSession(store, token) : undefined;
+}
+
+function requiredWallet(store: MemoryStore, userId: string, mode: Mode) {
+  const wallet = store.listWallets(userId, mode).find((item) => item.asset === 'NGN');
+  if (!wallet) throw Object.assign(new Error('NGN wallet is unavailable.'), { statusCode: 409, code: 'WALLET_NOT_FOUND' });
+  return wallet;
+}
+
+function requiredPlatformWallet(store: MemoryStore, mode: Mode) {
+  let wallet = store.listWallets(mode === 'DEMO' ? 'platform-demo' : 'platform-live', mode).find((item) => item.asset === 'NGN');
+  if (!wallet) wallet = store.saveWallet({ id: `platform-${mode.toLowerCase()}-funding-ngn`, userId: `platform-${mode.toLowerCase()}`, mode, asset: 'NGN', label: `${mode} funding reserve` });
+  return wallet;
+}
+
+function createMoneyRequest(user: User, type: MoneyRequest['type'], amountNgn: number, provider: string): MoneyRequest {
+  const now = new Date().toISOString();
+  return { id: `${type.toLowerCase()}_${randomUUID()}`, mode: user.mode, userId: user.id, type, amountMinor: toMinor(amountNgn).toString(), feeMinor: '0', status: 'PENDING', provider, reference: `NM-${type.slice(0, 3)}-${Date.now().toString(36).toUpperCase()}`, createdAt: now, updatedAt: now };
+}
+
+function walletSummaries(store: MemoryStore, user: User) {
+  return store.listWallets(user.id, user.mode).map((wallet) => ({ ...wallet, balance: fromMinor(accountBalanceMinor(store, wallet.id)) }));
+}
+
+function audit(store: MemoryStore, request: FastifyRequest, action: string, targetType: string, targetId: string, reason: string, oldValue?: unknown, newValue?: unknown) {
+  const event: AuditEvent = { id: `audit_${randomUUID()}`, actorId: String(request.headers['x-admin-id'] || 'development-admin'), action, targetType, targetId, reason, oldValue, newValue, ip: request.ip, device: request.headers['user-agent'], requestId: request.id, createdAt: new Date().toISOString() };
+  store.appendAudit(event);
+}
+
+function adminMode(request: FastifyRequest): Mode {
+  return String((request.query as { mode?: string }).mode || request.headers['x-app-mode'] || (config.environment === 'production' ? 'LIVE' : 'DEMO')).toUpperCase() === 'LIVE' ? 'LIVE' : 'DEMO';
+}
+
+function marketState(mode: Mode) {
+  if (mode === 'DEMO') return { ready: true, status: 'DEMO', message: 'Demo market simulation is active. Values are clearly labelled and are not real market data.' };
+  const states = providerStates();
+  return { ready: states.marketData.configured && states.solanaRpc.configured, status: states.marketData.configured ? 'DEGRADED' : 'OFFLINE', message: states.marketData.configured ? 'Market key present; live adapter deployment and health verification are still required.' : 'Live market providers are not configured. No token data will be fabricated.' };
+}
+
+function statusPayload(environment: string, store: MemoryStore) {
+  return { ok: true, appRunning: true, service: 'nairameme-api', environment, modeIsolation: true, database: 'IN_MEMORY_DEVELOPMENT', providers: providerStateMap(store), paperBroker: { status: 'AVAILABLE', mode: 'DEMO' }, liveTrading: { enabled: false, reason: 'Audited custody and execution adapters are not configured.' }, features: config.flags };
+}
+
+function providerStateMap(store: MemoryStore): Record<string, ProviderConfig & { secret: string }> {
+  const configured = providerStates();
+  const saved = new Map(store.listProviders().map((item) => [item.key, item]));
+  return Object.fromEntries(defaultProviders().map((base) => {
+    const runtime = configured[base.key as keyof typeof configured];
+    const value = saved.get(base.key) || { ...base, configured: runtime?.configured || false, status: runtime?.configured ? 'CONNECTED' : 'UNCONFIGURED' };
+    return [base.key, { ...value, secret: value.configured ? 'configured (masked)' : 'not configured' }];
+  }));
+}
+
+function defaultProviders(): ProviderConfig[] {
+  return [
+    provider('monnify', 'payments', 'Monnify', 1, 'https://app.monnify.com/', ['API key', 'Secret key', 'Contract code']),
+    provider('paystack', 'payments', 'Paystack', 2, 'https://dashboard.paystack.com/', ['Secret key', 'Public key']),
+    provider('flutterwave', 'payments', 'Flutterwave', 3, 'https://app.flutterwave.com/', ['Secret key', 'Public key', 'Encryption key']),
+    provider('supabase', 'identity', 'Supabase Auth', 1, 'https://supabase.com/dashboard', ['Project URL', 'Anon key', 'Service role secret']),
+    provider('dojah', 'kyc', 'Dojah', 1, 'https://app.dojah.io/', ['App ID', 'Private key']),
+    provider('termii', 'identity', 'Termii OTP', 2, 'https://accounts.termii.com/', ['API key', 'Sender ID']),
+    provider('sendchamp', 'identity', 'Sendchamp OTP', 3, 'https://my.sendchamp.com/', ['Public key', 'Sender ID']),
+    provider('helius', 'marketData', 'Helius', 1, 'https://dashboard.helius.dev/', ['API key', 'RPC URL']),
+    provider('pumpportal', 'marketData', 'PumpPortal', 2, 'https://pumpportal.fun/', ['API key']),
+    provider('birdeye', 'marketData', 'Birdeye', 3, 'https://bds.birdeye.so/', ['API key']),
+    provider('dexscreener', 'marketData', 'DexScreener', 4, 'https://dexscreener.com/', []),
+    provider('jupiter', 'trading', 'Jupiter', 1, 'https://portal.jup.ag/', ['API key']),
+    provider('pumpswap', 'trading', 'PumpSwap', 2, 'https://pump.fun/', ['Execution adapter credentials']),
+    provider('resend', 'email', 'Resend', 1, 'https://resend.com/api-keys', ['API key', 'Verified domain']),
+    provider('ses', 'email', 'Amazon SES', 2, 'https://console.aws.amazon.com/ses/', ['Access key', 'Secret key', 'Region']),
+    provider('google', 'email', 'Google Workspace', 3, 'https://admin.google.com/', ['SMTP relay host', 'Username', 'App password']),
+    provider('expo', 'push', 'Expo Push', 1, 'https://expo.dev/accounts', ['Access token']),
+    provider('firebase', 'push', 'Firebase Cloud Messaging', 2, 'https://console.firebase.google.com/', ['Service account']),
+    provider('apns', 'push', 'Apple Push Notifications', 3, 'https://developer.apple.com/account/resources/authkeys/list', ['Key ID', 'Team ID', 'APNs key']),
+    provider('emergent', 'ai', 'Emergent Universal LLM', 1, 'https://app.emergent.sh/', ['Universal API key', 'Base URL', 'Default model'])
+  ];
+}
+
+function provider(key: string, family: string, displayName: string, priority: number, setupUrl: string, requiredFields: string[]): ProviderConfig {
+  return { key, family, displayName, enabled: true, priority, configured: false, status: 'UNCONFIGURED', setupUrl, docsUrl: setupUrl, requiredFields, publicConfig: {} };
+}
+
+function providerRequired(reply: FastifyReply, providerName: keyof typeof config.providers, message: string) {
+  if (!config.providers[providerName]) return reply.status(503).send({ code: 'PROVIDER_NOT_CONFIGURED', message });
   return reply.status(501).send({ code: 'ADAPTER_NOT_IMPLEMENTED', message: 'Provider configured, but the audited adapter is not enabled.' });
 }
 
@@ -190,28 +453,25 @@ function featureRequired(reply: FastifyReply, feature: keyof typeof config.flags
 
 function providerStates() {
   return {
-    payments: state(config.providers.payments),
-    identity: state(config.providers.identity),
-    marketData: state(config.providers.marketData),
-    solanaRpc: state(config.providers.solanaRpc),
-    kyc: state(config.providers.kyc),
-    email: state(config.providers.email),
-    push: state(config.providers.push),
-    trading: state(config.providers.trading),
-    ai: state(config.providers.ai)
+    payments: state(config.providers.payments), identity: state(config.providers.identity), marketData: state(config.providers.marketData),
+    solanaRpc: state(config.providers.solanaRpc), kyc: state(config.providers.kyc), email: state(config.providers.email),
+    push: state(config.providers.push), trading: state(config.providers.trading), ai: state(config.providers.ai)
   };
 }
 
-function state(configured: boolean) {
-  return { configured, status: configured ? 'CONFIGURED' : 'UNCONFIGURED' };
-}
-
-function providerName(key: string) {
-  return ({ identity: 'Phone and email authentication', payments: 'Naira payments', marketData: 'Market data', solanaRpc: 'Solana RPC', kyc: 'Identity/KYC', email: 'Email delivery', push: 'Push notifications', trading: 'Trade execution', ai: 'AI intelligence' } as Record<string, string>)[key] || key;
-}
-
+function state(configured: boolean) { return { configured, status: configured ? 'CONNECTED' : 'UNCONFIGURED' }; }
 function safeTokenEqual(supplied: string, expected: string) {
-  const left = Buffer.from(supplied);
-  const right = Buffer.from(expected);
+  const left = Buffer.from(supplied); const right = Buffer.from(expected);
   return left.length === right.length && timingSafeEqual(left, right);
+}
+function toMinor(value: number) { return BigInt(Math.round(value * 100)); }
+function fromMinor(value: bigint) { return (Number(value) / 100).toFixed(2); }
+function sumMoney(items: MoneyRequest[]) { return fromMinor(items.reduce((sum, item) => sum + BigInt(item.amountMinor), 0n)); }
+function runnerCategory(score: number, risk: number) { return risk >= 70 ? 'High Risk Runner' : score >= 90 ? 'Explosive Runner' : score >= 80 ? 'Strong Runner' : score >= 65 ? 'Potential Runner' : 'Avoid'; }
+function tokenExplanation(token: { runnerScore: number; riskScore: number; liquidityNgn: string; holders: number }) {
+  return { summary: `Runner score ${token.runnerScore}/100 with ${token.riskScore}/100 risk. Liquidity is ₦${Number(token.liquidityNgn).toLocaleString()} across ${token.holders.toLocaleString()} tracked holders.`, highestRisk: token.riskScore >= 60 ? 'Wallet concentration and liquidity depth require caution.' : 'No extreme risk flag in the available Demo signals.', disclaimer: 'Scores are decision support, not a profit guarantee.' };
+}
+function emptyState() {
+  const seeded = seedDemoData();
+  return { ...seeded, users: [], wallets: [], ledgerTransactions: [], kycCases: [], tokens: [], bounties: [], alerts: [], moneyRequests: [], trades: [], positions: [] };
 }

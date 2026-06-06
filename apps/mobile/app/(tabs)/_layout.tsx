@@ -17,6 +17,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: icon('home') }} />
       <Tabs.Screen name="discover" options={{ title: 'Discover', tabBarIcon: icon('pulse') }} />
       <Tabs.Screen name="portfolio" options={{ title: 'Portfolio', tabBarIcon: icon('wallet') }} />
+      <Tabs.Screen name="earn" options={{ title: 'Earn', tabBarIcon: icon('trophy') }} />
       <Tabs.Screen name="social" options={{ title: 'Network', tabBarIcon: icon('people') }} />
       <Tabs.Screen name="bot" options={{ title: 'Auto Sniper', tabBarIcon: icon('flash') }} />
     </Tabs>

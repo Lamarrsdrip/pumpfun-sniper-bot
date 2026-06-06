@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { router } from 'expo-router';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
-import { api, ApiError } from '@/api';
+import { api, ApiError, saveSession } from '@/api';
 import { Button, Card, Screen } from '@/components';
 import { dark, spacing } from '@/theme';
 
@@ -21,6 +21,18 @@ export default function AuthScreen() {
       setBusy(false);
     }
   };
+  const enterDemo = async () => {
+    setBusy(true);
+    try {
+      const result = await api<{ token: string }>('/v1/auth/demo', { method: 'POST', body: JSON.stringify({ userId: 'demo-user-ada' }) });
+      await saveSession(result.token, 'DEMO');
+      router.replace('/(tabs)');
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : 'Demo sign-in is unavailable.');
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <Screen>
       <View style={styles.hero}>
@@ -32,7 +44,8 @@ export default function AuthScreen() {
         <TextInput value={identifier} onChangeText={setIdentifier} placeholder="Phone number or email" placeholderTextColor={dark.muted} style={styles.input} autoCapitalize="none" keyboardType="email-address" />
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <Button title={busy ? 'Checking provider...' : 'Continue securely'} disabled={busy || identifier.trim().length < 5} onPress={continueSecurely} />
-        <Button title="Enter app preview" kind="secondary" onPress={() => router.replace('/(tabs)')} />
+        <Button title="Explore Demo Mode" kind="secondary" disabled={busy} onPress={enterDemo} />
+        <Text style={styles.demo}>Demo Mode uses clearly labelled sample money and market activity. Nothing is charged or sent to a blockchain.</Text>
         <Text style={styles.legal}>By continuing, you agree to identity checks, trading risk disclosures, and the platform terms. Meme coins can lose most or all of their value.</Text>
       </Card>
     </Screen>
@@ -47,4 +60,5 @@ const styles = StyleSheet.create({
   input: { minHeight: 50, color: dark.text, backgroundColor: dark.surfaceRaised, borderColor: dark.border, borderWidth: 1, borderRadius: 8, paddingHorizontal: 14, marginBottom: 12 },
   error: { color: dark.red, fontSize: 12, lineHeight: 17, marginBottom: 12 },
   legal: { color: dark.muted, fontSize: 11, lineHeight: 16, marginTop: 12 }
+  ,demo: { color: dark.yellow, fontSize: 11, lineHeight: 16, marginTop: 10 }
 });

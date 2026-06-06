@@ -4,6 +4,47 @@ NairaMeme is a Naira-first native iOS/Android meme-market platform. It combines 
 
 The original Pump.fun scanner remains in `src/` as a migration source and internal paper-testing terminal. It is not the customer mobile application.
 
+## Fastest Local Preview
+
+Open three Terminal windows in the project folder.
+
+Terminal 1, API:
+
+```bash
+npm run api
+```
+
+Terminal 2, admin portal:
+
+```bash
+npm run admin
+```
+
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173). Select **Demo** to operate sample users, KYC, deposits, withdrawals, trades, tokens, providers and audit logs.
+
+Terminal 3, phone app:
+
+```bash
+cd apps/mobile
+EXPO_PUBLIC_API_URL=http://YOUR_MAC_LAN_IP:8790 npx expo start --lan --clear
+```
+
+Keep the Mac and phone on the same Wi-Fi, update Expo Go, then scan the QR code. On the welcome screen tap **Explore Demo Mode**. Demo Mode is always labelled and never moves real money.
+
+To find the Mac LAN IP:
+
+```bash
+ipconfig getifaddr en0
+```
+
+If that prints nothing, try:
+
+```bash
+ipconfig getifaddr en1
+```
+
+The API health page is [http://127.0.0.1:8790/api/status](http://127.0.0.1:8790/api/status).
+
 ## New Platform Structure
 
 ```text
@@ -68,6 +109,34 @@ The following remain disabled until configured and approved:
 - Auto Sniper live mode
 - Copy trading
 - Bulk email/push delivery
+
+## What Works In This Slice
+
+- Explicitly isolated Demo and Live modes.
+- Demo email-style session with secure token storage on device.
+- Double-entry Naira wallet accounting and idempotent credits.
+- Deposit references, withdrawal requests, fees and admin decisions.
+- Real backend quote/execute lifecycle for Demo buys and sells.
+- Fee-aware portfolio, positions and trade history.
+- Newest-first token discovery, full contract display and copy.
+- Runner/risk intelligence with rules-first AI explanations.
+- Configurable Demo Auto Sniper limits; Live activation fails closed.
+- Admin user search, suspension, KYC decisions, money approvals, trades, token monitor, provider controls and audit trail.
+- Emergent Universal LLM configuration with caching, low request rate and a daily credit ceiling. LLM output cannot authorize a trade.
+
+## Provider Accounts Needed For Live
+
+1. Supabase: authentication, PostgreSQL and storage.
+2. Monnify: primary virtual accounts and bank transfers.
+3. Paystack and Flutterwave: payment fallback adapters.
+4. Dojah: first KYC provider.
+5. Helius, PumpPortal, Birdeye and a production Solana RPC: market and wallet intelligence.
+6. Jupiter/Pump execution service plus audited custody/signing infrastructure.
+7. Resend: primary email. AWS SES and Google Workspace may be fallbacks.
+8. Expo Push, then Firebase/APNs credentials for production notifications.
+9. Emergent Universal LLM only for cached beginner explanations, never trade permission.
+
+See [docs/LAUNCH_ROADMAP.md](docs/LAUNCH_ROADMAP.md) for the exact production blockers.
 
 Provider secrets belong in a secret manager or backend environment. They are never returned to the mobile/admin clients.
 
