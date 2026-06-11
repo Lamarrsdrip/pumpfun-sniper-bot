@@ -138,6 +138,64 @@ test('fees, incidents and token moderation perform real audited state changes', 
   await app.close();
 });
 
+test('asset availability and reward policy changes are audited', async () => {
+  const app = await buildApp();
+  const assets = await app.inject({ method: 'GET', url: '/v1/admin/assets' });
+  assert.equal(assets.statusCode, 200);
+  assert.equal(assets.json().assets.some((asset: { symbol: string }) => asset.symbol === 'BTC'), true);
+
+  const updatedAsset = await app.inject({
+    method: 'PATCH',
+    url: '/v1/admin/assets/TRX',
+    payload: { enabled: true, deposits: true, withdrawals: true, swaps: true, reason: 'Tron custody adapter approved for Demo' }
+  });
+  assert.equal(updatedAsset.statusCode, 200);
+  assert.equal(updatedAsset.json().asset.enabled, true);
+
+  const rewards = await app.inject({
+    method: 'PUT',
+    url: '/v1/admin/rewards',
+    payload: {
+      enabled: true,
+      referralRewardNgn: 1500,
+      refereeRewardNgn: 750,
+      billCashbackPercent: 1,
+      cardCashbackPercent: 0.5,
+      tradingRewardPercent: 0
+    }
+  });
+  assert.equal(rewards.statusCode, 200);
+  assert.equal(rewards.json().settings.referralRewardNgn, 1500);
+
+  const audit = await app.inject({ method: 'GET', url: '/v1/admin/audit' });
+  assert.ok(audit.json().events.some((event: { action: string }) => event.action === 'ASSET_POLICY_UPDATED'));
+  assert.ok(audit.json().events.some((event: { action: string }) => event.action === 'REWARD_POLICY_UPDATED'));
+  await app.close();
+});
+
+test('WhatsApp template drafts are created and audited without sending messages', async () => {
+  const app = await buildApp();
+  const created = await app.inject({
+    method: 'POST',
+    url: '/v1/admin/whatsapp/templates',
+    payload: {
+      name: 'deposit_received',
+      category: 'UTILITY',
+      language: 'en',
+      body: 'Your MemeZo deposit of {{1}} has been confirmed.'
+    }
+  });
+  assert.equal(created.statusCode, 201);
+  assert.equal(created.json().template.status, 'DRAFT');
+
+  const templates = await app.inject({ method: 'GET', url: '/v1/admin/whatsapp/templates' });
+  assert.ok(templates.json().templates.some((item: { name: string }) => item.name === 'deposit_received'));
+
+  const audit = await app.inject({ method: 'GET', url: '/v1/admin/audit' });
+  assert.ok(audit.json().events.some((event: { action: string }) => event.action === 'WHATSAPP_TEMPLATE_CREATED'));
+  await app.close();
+});
+
 test('production admin routes reject requests without an admin token', async () => {
   const app = await buildApp({
     environment: 'production',

@@ -15,7 +15,13 @@ import type {
   Trade,
   User,
   VirtualAccount,
-  WalletAccount
+  WalletAccount,
+  WhatsappApprovalSession,
+  WhatsappCommandLog,
+  WhatsappConnection,
+  WhatsappMessage,
+  WhatsappTemplate,
+  WhatsappWebhookEvent
 } from './types.js';
 
 const clone = <T>(value: T): T => structuredClone(value);
@@ -165,6 +171,73 @@ export function createMemoryStore(initial: StoreState) {
     },
     saveBillPayment(value: BillPayment): BillPayment {
       state.billPayments.push(clone(value));
+      return clone(value);
+    },
+    listWhatsappConnections(filter: { mode?: Mode; userId?: string } = {}): WhatsappConnection[] {
+      return clone(state.whatsappConnections
+        .filter((item) => !filter.mode || item.mode === filter.mode)
+        .filter((item) => !filter.userId || item.userId === filter.userId)
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)));
+    },
+    getWhatsappConnection(id: string): WhatsappConnection | undefined {
+      return clone(state.whatsappConnections.find((item) => item.id === id));
+    },
+    saveWhatsappConnection(value: WhatsappConnection): WhatsappConnection {
+      const index = state.whatsappConnections.findIndex((item) => item.id === value.id);
+      if (index >= 0) state.whatsappConnections[index] = clone(value);
+      else state.whatsappConnections.push(clone(value));
+      return clone(value);
+    },
+    listWhatsappMessages(filter: { mode?: Mode; userId?: string; connectionId?: string } = {}): WhatsappMessage[] {
+      return clone(state.whatsappMessages
+        .filter((item) => !filter.mode || item.mode === filter.mode)
+        .filter((item) => !filter.userId || item.userId === filter.userId)
+        .filter((item) => !filter.connectionId || item.connectionId === filter.connectionId)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
+    },
+    saveWhatsappMessage(value: WhatsappMessage): WhatsappMessage {
+      state.whatsappMessages.push(clone(value));
+      return clone(value);
+    },
+    listWhatsappWebhookEvents(mode?: Mode): WhatsappWebhookEvent[] {
+      return clone(state.whatsappWebhookEvents.filter((item) => !mode || item.mode === mode).sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
+    },
+    saveWhatsappWebhookEvent(value: WhatsappWebhookEvent): WhatsappWebhookEvent {
+      state.whatsappWebhookEvents.push(clone(value));
+      return clone(value);
+    },
+    listWhatsappCommandLogs(filter: { mode?: Mode; userId?: string } = {}): WhatsappCommandLog[] {
+      return clone(state.whatsappCommandLogs
+        .filter((item) => !filter.mode || item.mode === filter.mode)
+        .filter((item) => !filter.userId || item.userId === filter.userId)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
+    },
+    saveWhatsappCommandLog(value: WhatsappCommandLog): WhatsappCommandLog {
+      state.whatsappCommandLogs.push(clone(value));
+      return clone(value);
+    },
+    listWhatsappApprovalSessions(filter: { mode?: Mode; userId?: string } = {}): WhatsappApprovalSession[] {
+      return clone(state.whatsappApprovalSessions
+        .filter((item) => !filter.mode || item.mode === filter.mode)
+        .filter((item) => !filter.userId || item.userId === filter.userId)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
+    },
+    getWhatsappApprovalSession(id: string): WhatsappApprovalSession | undefined {
+      return clone(state.whatsappApprovalSessions.find((item) => item.id === id));
+    },
+    saveWhatsappApprovalSession(value: WhatsappApprovalSession): WhatsappApprovalSession {
+      const index = state.whatsappApprovalSessions.findIndex((item) => item.id === value.id);
+      if (index >= 0) state.whatsappApprovalSessions[index] = clone(value);
+      else state.whatsappApprovalSessions.push(clone(value));
+      return clone(value);
+    },
+    listWhatsappTemplates(mode?: Mode): WhatsappTemplate[] {
+      return clone(state.whatsappTemplates.filter((item) => !mode || item.mode === mode));
+    },
+    saveWhatsappTemplate(value: WhatsappTemplate): WhatsappTemplate {
+      const index = state.whatsappTemplates.findIndex((item) => item.id === value.id);
+      if (index >= 0) state.whatsappTemplates[index] = clone(value);
+      else state.whatsappTemplates.push(clone(value));
       return clone(value);
     },
     listTrades(filter: { mode?: Mode; userId?: string } = {}): Trade[] {

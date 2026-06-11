@@ -20,7 +20,8 @@ export const config = {
     email: Boolean(process.env.EMAIL_PROVIDER_KEY),
     push: Boolean(process.env.EXPO_ACCESS_TOKEN),
     trading: Boolean(process.env.TRADING_PROVIDER_URL && process.env.TRADING_PROVIDER_KEY),
-    ai: Boolean(process.env.EMERGENT_LLM_API_KEY || process.env.AI_PROVIDER_KEY)
+    ai: Boolean(process.env.EMERGENT_LLM_API_KEY || process.env.AI_PROVIDER_KEY),
+    messaging: Boolean(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID && process.env.WHATSAPP_APP_SECRET)
   },
   ai: {
     baseUrl: process.env.EMERGENT_LLM_BASE_URL || '',

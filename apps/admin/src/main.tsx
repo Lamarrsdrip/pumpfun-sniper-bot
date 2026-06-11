@@ -16,10 +16,13 @@ type Incident = { id: string; title: string; severity: string; status: string; n
 type OperationsSettings = { depositFeePercent: number; swapFeePercent: number; botFeePercent: number; withdrawalFeePercent: number; cryptoWithdrawalMarginPercent: number; minimumDepositNgn: number; maximumWithdrawalNgn: number; dailyUserLimitNgn: number; proMonthlyNgn: number; eliteMonthlyNgn: number };
 type BotControl = { userId: string; name: string; settings: { active: boolean; riskLevel: string } | null };
 type CopyTrader = { userId: string; name: string; enabled: boolean; riskRating: 'LOW' | 'MEDIUM' | 'HIGH'; trades: number; winRate: number; copiedVolumeNgn: string; reviewedAt?: string };
+type AssetPolicy = { symbol: string; name: string; enabled: boolean; deposits: boolean; withdrawals: boolean; swaps: boolean; networks: string[] };
+type RewardPolicy = { enabled: boolean; referralRewardNgn: number; refereeRewardNgn: number; billCashbackPercent: number; cardCashbackPercent: number; tradingRewardPercent: number };
+type WhatsappTemplate = { id: string; name: string; category: string; language: string; status: string; body: string; createdAt: string };
 type Notice = { tone: 'success' | 'warning'; text: string };
 
 const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8790';
-const nav = ['Overview', 'Users & KYC', 'Virtual Accounts', 'Deposits', 'Withdrawals', 'AI Payments', 'P2P Orders', 'Bill Payments', 'Trades', 'Runner AI', 'Auto Sniper', 'Copy Trading', 'Campaign Center', 'Providers & API Keys', 'Fees & Limits', 'Audit Log', 'Incidents', 'Launch Checklist'];
+const nav = ['Overview', 'Users & KYC', 'Virtual Accounts', 'Deposits', 'Withdrawals', 'AI Payments', 'WhatsApp Assistant', 'P2P Orders', 'Bill Payments', 'Trades', 'Runner AI', 'Auto Sniper', 'Copy Trading', 'Assets & Networks', 'Rewards', 'Campaign Center', 'Providers & API Keys', 'Fees & Limits', 'Audit Log', 'Incidents', 'Launch Checklist'];
 
 async function request<T>(path: string, init: RequestInit = {}, mode: 'DEMO' | 'LIVE' = 'DEMO'): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`, { ...init, headers: { 'Content-Type': 'application/json', 'X-App-Mode': mode, ...init.headers } });
@@ -38,7 +41,7 @@ function App() {
   return <main>
     <aside><div className="brand"><span>MZ</span><div><strong>MemeZo</strong><small>Business operations</small></div></div><nav>{nav.map((item) => <button key={item} className={selected === item ? 'active' : ''} onClick={() => setSelected(item)}>{item}<ChevronRight /></button>)}</nav></aside>
     <section className="content">
-      <header><div><p className="eyebrow">{mode} OPERATIONS</p><h1>{selected}</h1><p>Operate users, money movement, markets, providers and controls from one place.</p></div><div className="header-actions"><div className="mode-switch"><button className={mode === 'DEMO' ? 'selected' : ''} onClick={() => setMode('DEMO')}>Demo</button><button className={mode === 'LIVE' ? 'selected live' : ''} onClick={() => setMode('LIVE')}>Live</button></div><button className="danger" onClick={() => request('/v1/admin/emergency/trading/pause', { method: 'POST' }, mode).then(() => setNotice({ tone: 'warning', text: 'Emergency pause request recorded for approval.' }))}><AlertTriangle /> Emergency pause</button></div></header>
+      <header><div><p className="eyebrow">{mode} OPERATIONS</p><h1>{selected}</h1><p>Operate users, money movement, markets, providers and controls from one place.</p></div><div className="header-actions"><div className="mode-switch"><button className={mode === 'DEMO' ? 'selected' : ''} onClick={() => setMode('DEMO')}>Demo</button><button className={mode === 'LIVE' ? 'selected live' : ''} onClick={() => setMode('LIVE')}>Live</button></div><button className="danger" onClick={() => request<{ status: string }>('/v1/admin/emergency/trading/pause', { method: 'POST' }, mode).then((result) => setNotice({ tone: 'warning', text: `Trading pause is ${result.status.toLowerCase()} for ${mode}.` })).catch((error) => setNotice({ tone: 'warning', text: error.message }))}><AlertTriangle /> Emergency pause</button></div></header>
       {mode === 'DEMO' && <div className="demo-banner"><ShieldCheck /> Demo operations use sample users and money. Live records remain isolated.</div>}
       {notice && <div className={`notice ${notice.tone}`}><span>{notice.text}</span><button onClick={() => setNotice(null)}>Close</button></div>}
       <Workspace selected={selected} mode={mode} overview={overview} notice={setNotice} refresh={refresh} />
@@ -53,6 +56,7 @@ function Workspace({ selected, mode, overview, notice, refresh }: { selected: st
   if (selected === 'Withdrawals') return <MoneyPage mode={mode} type="WITHDRAWAL" notice={notice} refresh={refresh} />;
   if (selected === 'Virtual Accounts') return <RecordsPage mode={mode} title="Virtual account operations" endpoint="/v1/admin/virtual-accounts" collection="accounts" />;
   if (selected === 'AI Payments') return <RecordsPage mode={mode} title="AI payment review" endpoint="/v1/admin/ai-payments" collection="payments" />;
+  if (selected === 'WhatsApp Assistant') return <WhatsappAdmin mode={mode} />;
   if (selected === 'P2P Orders') return <RecordsPage mode={mode} title="P2P merchant orders" endpoint="/v1/admin/p2p-orders" collection="orders" />;
   if (selected === 'Bill Payments') return <RecordsPage mode={mode} title="Bill-payment operations" endpoint="/v1/admin/bill-payments" collection="payments" />;
   if (selected === 'Trades') return <TradesPage mode={mode} />;
@@ -61,6 +65,8 @@ function Workspace({ selected, mode, overview, notice, refresh }: { selected: st
   if (selected === 'Campaign Center') return <CampaignCenter mode={mode} notice={notice} />;
   if (selected === 'Auto Sniper') return <BotAdmin mode={mode} notice={notice} />;
   if (selected === 'Copy Trading') return <CopyTradingAdmin mode={mode} notice={notice} />;
+  if (selected === 'Assets & Networks') return <AssetsNetworks mode={mode} notice={notice} />;
+  if (selected === 'Rewards') return <RewardsAdmin mode={mode} notice={notice} />;
   if (selected === 'Fees & Limits') return <FeesLimits mode={mode} notice={notice} />;
   if (selected === 'Incidents') return <IncidentsPage mode={mode} notice={notice} />;
   if (selected === 'Launch Checklist') return <LaunchChecklist overview={overview} />;
@@ -125,6 +131,7 @@ function TokensPage({ mode }: { mode: 'DEMO' | 'LIVE' }) {
 function ProvidersPage({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
   const [providers, setProviders] = useState<Provider[]>([]); const [open, setOpen] = useState(''); const [values, setValues] = useState<Record<string, string>>({}); const load = () => request<Provider[]>('/v1/admin/providers', {}, mode).then(setProviders); useEffect(() => { void load(); }, [mode]);
   const change = async (item: Provider, enabled: boolean) => { await request(`/v1/admin/providers/${item.key}`, { method: 'PATCH', body: JSON.stringify({ enabled, reason: enabled ? 'Enabled by administrator' : 'Disabled by administrator' }) }, mode); notice({ tone: 'success', text: `${item.displayName} ${enabled ? 'enabled' : 'disabled'}.` }); void load(); };
+  const priority = async (item: Provider, value: number) => { await request(`/v1/admin/providers/${item.key}`, { method: 'PATCH', body: JSON.stringify({ priority: value, reason: 'Provider priority updated by administrator' }) }, mode); notice({ tone: 'success', text: `${item.displayName} priority updated to ${value}.` }); void load(); };
   const test = async (item: Provider) => { const result = await request<{ message: string }>(`/v1/admin/providers/${item.key}/test`, { method: 'POST' }, mode); notice({ tone: item.configured ? 'success' : 'warning', text: `${item.displayName}: ${result.message}` }); };
   const save = async (item: Provider) => {
     const credentials = Object.fromEntries((item.requiredFields || []).map((field) => [field, values[`${item.key}:${field}`] || '']));
@@ -135,7 +142,7 @@ function ProvidersPage({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value
     (groups[item.family] ||= []).push(item);
     return groups;
   }, {}), [providers]);
-  return <div className="stack">{Object.entries(grouped).map(([family, items]) => <Panel key={family} title={`${family} providers`} subtitle="Credentials are sent only to the backend secret-storage endpoint"><div className="provider-grid">{items?.map((item) => <div className="provider-card" key={item.key}><div><strong>{item.displayName}</strong><small>Priority {item.priority} · {item.secret}</small></div><Badge value={item.status} /><p>{item.featureUnlocked || `Enables ${item.family} services`}</p><div className="provider-buttons"><a href={item.setupUrl} target="_blank" rel="noreferrer">Get credentials</a><button className="table-muted" onClick={() => setOpen(open === item.key ? '' : item.key)}>Configure</button><button className="table-muted" onClick={() => test(item)}>Test</button><button className={item.enabled ? 'table-danger' : 'table-action'} onClick={() => change(item, !item.enabled)}>{item.enabled ? 'Disable' : 'Enable'}</button></div>{open === item.key && <div className="provider-form">{(item.requiredFields || []).map((field) => <label key={field}>{field}<input type={/secret|key|password|credential/i.test(field) ? 'password' : 'text'} value={values[`${item.key}:${field}`] || ''} onChange={(event) => setValues({ ...values, [`${item.key}:${field}`]: event.target.value })} /></label>)}<button onClick={() => save(item)}>Save securely</button></div>}</div>)}</div></Panel>)}</div>;
+  return <div className="stack">{Object.entries(grouped).map(([family, items]) => <Panel key={family} title={`${family} providers`} subtitle="Credentials are sent only to the backend secret-storage endpoint"><div className="provider-grid">{items?.map((item) => <div className="provider-card" key={item.key}><div><strong>{item.displayName}</strong><small>Priority {item.priority} · {item.secret}</small></div><Badge value={item.status} /><p>{item.featureUnlocked || `Enables ${item.family} services`}</p><div className="provider-buttons"><a href={item.setupUrl} target="_blank" rel="noreferrer">Get credentials</a><button className="table-muted" onClick={() => setOpen(open === item.key ? '' : item.key)}>Configure</button><button className="table-muted" onClick={() => test(item)}>Test</button><button className={item.enabled ? 'table-danger' : 'table-action'} onClick={() => change(item, !item.enabled)}>{item.enabled ? 'Disable' : 'Enable'}</button></div>{open === item.key && <div className="provider-form"><label>Priority<input type="number" min="1" max="100" defaultValue={item.priority} onBlur={(event) => void priority(item, Number(event.target.value))} /></label>{(item.requiredFields || []).map((field) => <label key={field}>{field}<input type={/secret|key|password|credential/i.test(field) ? 'password' : 'text'} value={values[`${item.key}:${field}`] || ''} onChange={(event) => setValues({ ...values, [`${item.key}:${field}`]: event.target.value })} /></label>)}<button onClick={() => save(item)}>Save securely</button></div>}</div>)}</div></Panel>)}</div>;
 }
 
 function CampaignCenter({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
@@ -156,7 +163,7 @@ function CampaignCenter({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (valu
     try { await request(`/v1/admin/campaigns/${campaign.id}/approve`, { method: 'POST' }, mode); notice({ tone: 'success', text: `${campaign.name} approved.` }); void load(); }
     catch (error) { notice({ tone: 'warning', text: error instanceof Error ? error.message : 'Approval failed.' }); }
   };
-  return <div className="stack"><Panel title="Campaign Center" subtitle="Consent-aware email, push, and in-app broadcasts"><form className="campaign-form" onSubmit={(event) => submit(event, false)}><label>Campaign name<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label><label>Channel<select value={form.channel} onChange={(e) => setForm({ ...form, channel: e.target.value })}><option>EMAIL</option><option>PUSH</option><option>IN_APP</option></select></label><label>Audience<select value={form.segment} onChange={(e) => setForm({ ...form, segment: e.target.value })}><option value="ALL">All consented users</option><option value="KYC_APPROVED">KYC-approved users</option><option value="INACTIVE">Inactive users</option><option value="BOUNTY_USERS">Bounty users</option><option value="TRADERS">Traders</option></select></label><label>Subject<input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} /></label><label className="wide">Message<textarea required value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} /></label><label>Schedule<input type="datetime-local" value={form.schedule} onChange={(e) => setForm({ ...form, schedule: e.target.value })} /></label><div className="wide actions"><button type="submit" className="table-muted">Save draft</button><button type="button" className="table-action" onClick={(event) => submit(event, true)}>Submit for approval</button></div></form></Panel><Panel title="Campaign delivery queue" subtitle="Drafts, approvals, schedules and delivery status"><Table headers={['Campaign', 'Channel', 'Audience', 'Schedule', 'Status', 'Action']}>{campaigns.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{date(item.createdAt)}</small></td><td>{item.channel}</td><td>{item.audience}</td><td>{item.scheduledAt ? date(item.scheduledAt) : 'Immediate after approval'}</td><td><Badge value={item.status} /></td><td>{item.status === 'PENDING_APPROVAL' && <button className="table-action" onClick={() => approve(item)}>Approve</button>}</td></tr>)}</Table></Panel></div>;
+  return <div className="stack"><Panel title="Campaign Center" subtitle="Consent-aware email, push, and in-app broadcasts"><form className="campaign-form" onSubmit={(event) => submit(event, false)}><label>Campaign name<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label><label>Channel<select value={form.channel} onChange={(e) => setForm({ ...form, channel: e.target.value })}><option>EMAIL</option><option>PUSH</option><option>IN_APP</option></select></label><label>Audience<select value={form.segment} onChange={(e) => setForm({ ...form, segment: e.target.value })}><option value="ALL">All consented users</option><option value="KYC_APPROVED">KYC-approved users</option><option value="INACTIVE">Inactive users</option><option value="AI_PAY_USERS">AI Pay users</option><option value="P2P_MERCHANTS">P2P merchants</option><option value="TRADERS">Traders</option></select></label><label>Subject<input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} /></label><label className="wide">Message<textarea required value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} /></label><label>Schedule<input type="datetime-local" value={form.schedule} onChange={(e) => setForm({ ...form, schedule: e.target.value })} /></label><div className="wide actions"><button type="submit" className="table-muted">Save draft</button><button type="button" className="table-action" onClick={(event) => submit(event, true)}>Submit for approval</button></div></form></Panel><Panel title="Campaign delivery queue" subtitle="Drafts, approvals, schedules and delivery status"><Table headers={['Campaign', 'Channel', 'Audience', 'Schedule', 'Status', 'Action']}>{campaigns.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{date(item.createdAt)}</small></td><td>{item.channel}</td><td>{item.audience}</td><td>{item.scheduledAt ? date(item.scheduledAt) : 'Immediate after approval'}</td><td><Badge value={item.status} /></td><td>{item.status === 'PENDING_APPROVAL' && <button className="table-action" onClick={() => approve(item)}>Approve</button>}</td></tr>)}</Table></Panel></div>;
 }
 
 function FeesLimits({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
@@ -201,11 +208,107 @@ function CopyTradingAdmin({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (va
   return <Panel title="Copy Trading review" subtitle="Eligibility is controlled separately from social rankings"><Table headers={['Trader', 'Risk', 'Trades', 'Win rate', 'Copied volume', 'Status', 'Action']}>{traders.map((item) => <tr key={item.userId}><td><strong>{item.name}</strong><small>{item.userId}</small></td><td><Badge value={item.riskRating} /></td><td>{item.trades}</td><td>{item.winRate.toFixed(1)}%</td><td>{naira(item.copiedVolumeNgn)}</td><td><Badge value={item.enabled ? 'ACTIVE' : 'DISABLED'} /></td><td><button className={item.enabled ? 'table-danger' : 'table-action'} onClick={() => update(item, !item.enabled)}>{item.enabled ? 'Disable copy' : 'Enable copy'}</button></td></tr>)}</Table></Panel>;
 }
 
+function WhatsappAdmin({ mode }: { mode: 'DEMO' | 'LIVE' }) {
+  const [connections, setConnections] = useState<Array<Record<string, unknown>>>([]);
+  const [messages, setMessages] = useState<Array<Record<string, unknown>>>([]);
+  const [events, setEvents] = useState<Array<Record<string, unknown>>>([]);
+  const [commands, setCommands] = useState<Array<Record<string, unknown>>>([]);
+  const [templates, setTemplates] = useState<WhatsappTemplate[]>([]);
+  const [template, setTemplate] = useState({ name: '', category: 'UTILITY', body: '' });
+  const load = () => Promise.all([
+      request<{ connections: Array<Record<string, unknown>> }>('/v1/admin/whatsapp/connections', {}, mode),
+      request<{ messages: Array<Record<string, unknown>> }>('/v1/admin/whatsapp/messages', {}, mode),
+      request<{ events: Array<Record<string, unknown>> }>('/v1/admin/whatsapp/webhooks', {}, mode),
+      request<{ commands: Array<Record<string, unknown>> }>('/v1/admin/whatsapp/commands', {}, mode),
+      request<{ templates: WhatsappTemplate[] }>('/v1/admin/whatsapp/templates', {}, mode)
+    ]).then(([a, b, c, d, e]) => {
+      setConnections(a.connections);
+      setMessages(b.messages);
+      setEvents(c.events);
+      setCommands(d.commands);
+      setTemplates(e.templates);
+    });
+  useEffect(() => { void load(); }, [mode]);
+  const createTemplate = async (event: FormEvent) => {
+    event.preventDefault();
+    await request('/v1/admin/whatsapp/templates', { method: 'POST', body: JSON.stringify({ ...template, language: 'en' }) }, mode);
+    setTemplate({ name: '', category: 'UTILITY', body: '' });
+    void load();
+  };
+  return <div className="stack">
+    <div className="metrics">
+      <Metric label="Linked users" value={connections.length} icon={<Users />} />
+      <Metric label="Messages" value={messages.length} icon={<Activity />} />
+      <Metric label="Commands" value={commands.length} icon={<Bot />} />
+      <Metric label="Webhook events" value={events.length} icon={<Activity />} />
+    </div>
+    <Panel title="WhatsApp connections" subtitle="Masked user links and verification status">
+      <SimpleRecords records={connections} preferred={['phoneMasked', 'status', 'verifiedAt', 'lastMessageAt']} />
+    </Panel>
+    <Panel title="Command and approval activity" subtitle="Payments are prepared in chat but require secure approval">
+      <SimpleRecords records={commands} preferred={['command', 'status', 'responseSummary', 'createdAt']} />
+    </Panel>
+    <Panel title="Webhook delivery" subtitle="Failed signatures and provider events remain visible for operations">
+      <SimpleRecords records={events} preferred={['providerEventId', 'eventType', 'signatureValid', 'processed', 'error', 'receivedAt']} />
+    </Panel>
+    <Panel title="Approved message templates" subtitle="Create drafts here, then submit them through Meta Business Manager">
+      <form className="campaign-form" onSubmit={createTemplate}>
+        <label>Template name<input required pattern="[a-z0-9_]+" value={template.name} onChange={(event) => setTemplate({ ...template, name: event.target.value.toLowerCase().replaceAll(/[^a-z0-9_]/g, '_') })} /></label>
+        <label>Category<select value={template.category} onChange={(event) => setTemplate({ ...template, category: event.target.value })}><option>UTILITY</option><option>AUTHENTICATION</option><option>MARKETING</option></select></label>
+        <label className="wide">Message body<textarea required value={template.body} onChange={(event) => setTemplate({ ...template, body: event.target.value })} /></label>
+        <div className="wide actions"><button className="table-action">Create template draft</button></div>
+      </form>
+      <SimpleRecords records={templates} preferred={['name', 'category', 'language', 'status', 'createdAt']} />
+    </Panel>
+  </div>;
+}
+
+function AssetsNetworks({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
+  const [assets, setAssets] = useState<AssetPolicy[]>([]);
+  const load = () => request<{ assets: AssetPolicy[] }>('/v1/admin/assets', {}, mode).then((value) => setAssets(value.assets));
+  useEffect(() => { void load(); }, [mode]);
+  const toggle = async (asset: AssetPolicy) => {
+    await request(`/v1/admin/assets/${asset.symbol}`, { method: 'PATCH', body: JSON.stringify({ enabled: !asset.enabled, reason: `${asset.symbol} availability updated by operations` }) }, mode);
+    notice({ tone: 'success', text: `${asset.symbol} ${asset.enabled ? 'disabled' : 'enabled'} for ${mode}.` });
+    void load();
+  };
+  return <Panel title="Assets & Networks" subtitle="Control which currencies appear in Demo and Live environments">
+    <Table headers={['Asset', 'Networks', 'Deposit', 'Withdraw', 'Swap', 'Status', 'Action']}>
+      {assets.map((asset) => <tr key={asset.symbol}><td><strong>{asset.symbol}</strong><small>{asset.name}</small></td><td>{asset.networks.join(', ')}</td><td><Badge value={asset.deposits ? 'ENABLED' : 'DISABLED'} /></td><td><Badge value={asset.withdrawals ? 'ENABLED' : 'DISABLED'} /></td><td><Badge value={asset.swaps ? 'ENABLED' : 'DISABLED'} /></td><td><Badge value={asset.enabled ? 'ACTIVE' : 'DISABLED'} /></td><td><button className={asset.enabled ? 'table-danger' : 'table-action'} onClick={() => toggle(asset)}>{asset.enabled ? 'Disable' : 'Enable'}</button></td></tr>)}
+    </Table>
+  </Panel>;
+}
+
+function RewardsAdmin({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
+  const [settings, setSettings] = useState<RewardPolicy | null>(null);
+  useEffect(() => { request<{ settings: RewardPolicy }>('/v1/admin/rewards', {}, mode).then((value) => setSettings(value.settings)); }, [mode]);
+  if (!settings) return <Panel title="Rewards" subtitle="Loading reward policy"><p>Loading…</p></Panel>;
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    await request('/v1/admin/rewards', { method: 'PUT', body: JSON.stringify(settings) }, mode);
+    notice({ tone: 'success', text: `${mode} reward policy saved and audited.` });
+  };
+  return <Panel title="Rewards & Cashback" subtitle="Rewards stay disabled until operations enables a funded program">
+    <form className="campaign-form" onSubmit={save}>
+      <label>Program status<select value={settings.enabled ? 'ENABLED' : 'DISABLED'} onChange={(event) => setSettings({ ...settings, enabled: event.target.value === 'ENABLED' })}><option>DISABLED</option><option>ENABLED</option></select></label>
+      {([
+        ['referralRewardNgn', 'Referrer reward (₦)'],
+        ['refereeRewardNgn', 'New user reward (₦)'],
+        ['billCashbackPercent', 'Bill cashback (%)'],
+        ['cardCashbackPercent', 'Card cashback (%)'],
+        ['tradingRewardPercent', 'Trading reward (%)']
+      ] as Array<[keyof RewardPolicy, string]>).map(([key, label]) => <label key={key}>{label}<input type="number" min="0" step="0.01" value={Number(settings[key])} onChange={(event) => setSettings({ ...settings, [key]: Number(event.target.value) })} /></label>)}
+      <div className="wide actions"><button className="table-action" type="submit">Save reward policy</button></div>
+    </form>
+  </Panel>;
+}
+
 function LaunchChecklist({ overview }: { overview: Overview | null }) {
-  const providers = Object.values(overview?.providers || {}); const requiredFamilies = ['payments','identity','kyc','marketData','trading','custody','transactionRisk','email','push','observability']; const required = providers.filter((p) => requiredFamilies.includes(p.family));
+  const providers = Object.values(overview?.providers || {}); const requiredFamilies = ['payments','identity','kyc','marketData','trading','custody','transactionRisk','email','push','observability','messaging','bills','cards','analytics','support']; const required = providers.filter((p) => requiredFamilies.includes(p.family));
+  const optionalFamilies = ['ai', 'subscriptions']; const optional = providers.filter((p) => optionalFamilies.includes(p.family));
   const release = ['App name and store metadata', 'Bundle ID and package name', 'Icons and splash', 'Privacy policy and terms', 'Risk disclosure', 'Support email', 'Delete account flow', 'Production API URL', 'Crash reporting', 'TestFlight build', 'Google Play internal test'];
   const connectedFamilies = new Set(required.filter((p) => p.configured && p.enabled).map((p) => p.family));
-  return <div className="panel-grid"><Panel title="Provider readiness" subtitle={`${connectedFamilies.size}/${requiredFamilies.length} required capabilities configured`}><div className="compact-list">{required.map(item => <div className="list-row" key={item.key}><div><strong>{item.displayName}</strong><small>{item.featureUnlocked || item.family}</small></div><Badge value={item.status} /></div>)}</div></Panel><Panel title="Store release checklist" subtitle="Evidence required before submission"><div className="compact-list">{release.map(item => <div className="list-row" key={item}><strong>{item}</strong><Badge value="PENDING" /></div>)}</div></Panel></div>;
+  return <div className="stack"><div className="panel-grid"><Panel title="Required provider readiness" subtitle={`${connectedFamilies.size}/${requiredFamilies.length} required capabilities configured`}><div className="compact-list">{required.map(item => <div className="list-row" key={item.key}><div><strong>{item.displayName}</strong><small>{item.featureUnlocked || item.family}</small></div><Badge value={item.status} /></div>)}</div></Panel><Panel title="Store release checklist" subtitle="Evidence required before submission"><div className="compact-list">{release.map(item => <div className="list-row" key={item}><strong>{item}</strong><Badge value="PENDING" /></div>)}</div></Panel></div><Panel title="Optional growth providers" subtitle="Useful after the core money path is stable"><div className="compact-list">{optional.map(item => <div className="list-row" key={item.key}><div><strong>{item.displayName}</strong><small>{item.family}</small></div><Badge value={item.status} /></div>)}</div></Panel></div>;
 }
 
 function AuditPage({ mode }: { mode: 'DEMO' | 'LIVE' }) {
@@ -227,6 +330,13 @@ function RecordsPage({ mode, title, endpoint, collection }: { mode: 'DEMO' | 'LI
   }, [mode, endpoint, collection]);
   const keys = records.length ? Object.keys(records[0]).filter((key) => !['instruction', 'riskFlags'].includes(key)).slice(0, 8) : [];
   return <Panel title={title} subtitle="Live backend records with Demo and Live isolation">{error ? <div className="notice warning">{error}</div> : records.length ? <Table headers={keys.map((key) => key.replaceAll(/([A-Z])/g, ' $1'))}>{records.map((record, index) => <tr key={String(record.id || index)}>{keys.map((key) => <td key={key}>{formatRecordValue(record[key])}</td>)}</tr>)}</Table> : <p>No records exist in the selected environment.</p>}</Panel>;
+}
+
+function SimpleRecords({ records, preferred }: { records: Array<Record<string, unknown>>; preferred: string[] }) {
+  const keys = preferred.filter((key) => records.some((record) => key in record));
+  return records.length
+    ? <Table headers={keys.map((key) => key.replaceAll(/([A-Z])/g, ' $1'))}>{records.map((record, index) => <tr key={String(record.id || index)}>{keys.map((key) => <td key={key}>{formatRecordValue(record[key])}</td>)}</tr>)}</Table>
+    : <p>No records exist in this environment yet.</p>;
 }
 
 function formatRecordValue(value: unknown) {

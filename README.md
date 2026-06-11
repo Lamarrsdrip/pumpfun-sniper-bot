@@ -1,6 +1,6 @@
 # MemeZo Platform
 
-MemeZo is a Naira-first native iOS/Android meme-market platform. It combines market intelligence, manual trading, optional Auto Sniper automation, social discovery, communities, risk-adjusted leaderboards, copy-trading foundations, and an admin control plane.
+MemeZo is a Naira-first native iOS/Android money, crypto, automation, and multi-chain meme-intelligence platform. It combines daily payments, AI Pay, WhatsApp payment preparation, P2P merchant tools, a multi-currency wallet, DEX/Pump.fun discovery, optional Auto Sniper automation, and an admin control plane.
 
 The original Pump.fun scanner remains in `src/` as a migration source and internal paper-testing terminal. It is not the customer mobile application.
 
@@ -119,9 +119,12 @@ The following remain disabled until configured and approved:
 - Real backend quote/execute lifecycle for Demo buys and sells.
 - Fee-aware portfolio, positions and trade history.
 - Newest-first token discovery, full contract display and copy.
+- DEX-first multi-chain discovery for Solana, Ethereum, Base, BNB Chain, Polygon, Arbitrum and Optimism, with Pump.fun isolated as high-risk Early Solana mode.
 - Runner/risk intelligence with rules-first AI explanations.
+- Multi-asset wallet UX, network-aware receive/send flows, receipts, notifications, rewards, savings foundations and manage-assets controls.
+- WhatsApp Assistant link, verification, command parsing and secure in-app payment approval sessions.
 - Configurable Demo Auto Sniper limits; Live activation fails closed.
-- Admin user search, suspension, KYC decisions, money approvals, trades, token monitor, provider controls and audit trail.
+- Admin user search, KYC/money decisions, WhatsApp operations/templates, asset/network policy, rewards policy, provider priority/credentials, token monitor and audit trail.
 - Emergent Universal LLM configuration with caching, low request rate and a daily credit ceiling. LLM output cannot authorize a trade.
 
 ## Provider Accounts Needed For Live
@@ -130,11 +133,12 @@ The following remain disabled until configured and approved:
 2. Monnify: primary virtual accounts and bank transfers.
 3. Paystack and Flutterwave: payment fallback adapters.
 4. Dojah: first KYC provider.
-5. Helius, PumpPortal, Birdeye and a production Solana RPC: market and wallet intelligence.
-6. Jupiter/Pump execution service plus audited custody/signing infrastructure.
+5. DEX Screener, Birdeye and production multi-chain RPC providers; Helius and PumpPortal add Solana launch intelligence.
+6. Chain-aware quote/execution adapters plus audited custody/signing infrastructure.
 7. Resend: primary email. AWS SES and Google Workspace may be fallbacks.
 8. Expo Push, then Firebase/APNs credentials for production notifications.
 9. Emergent Universal LLM only for cached beginner explanations, never trade permission.
+10. Meta WhatsApp Business Cloud API for linked chat alerts and payment preparation.
 
 See [docs/LAUNCH_ROADMAP.md](docs/LAUNCH_ROADMAP.md) for the exact production blockers.
 

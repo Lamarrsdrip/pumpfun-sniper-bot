@@ -116,3 +116,45 @@ test('demo trade charges fees and creates a visible position and history', async
   assert.equal(portfolio.json().trades.length, 1);
   await app.close();
 });
+
+test('WhatsApp demo link verifies and prepares payment without moving money', async () => {
+  const app = await buildApp();
+  const linked = await app.inject({
+    method: 'POST',
+    url: '/v1/whatsapp/link',
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: { phone: '+2348012345678' }
+  });
+  assert.equal(linked.statusCode, 201);
+  assert.equal(linked.json().connection.status, 'PENDING_VERIFICATION');
+  assert.equal(linked.json().demoVerificationCode, '246810');
+  assert.equal(linked.body.includes('+2348012345678'), false);
+
+  const verified = await app.inject({
+    method: 'POST',
+    url: '/v1/whatsapp/verify',
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: { connectionId: linked.json().connection.id, code: '246810' }
+  });
+  assert.equal(verified.statusCode, 200);
+  assert.equal(verified.json().connection.status, 'CONNECTED');
+
+  const prepared = await app.inject({
+    method: 'POST',
+    url: '/v1/whatsapp/command',
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: {
+      connectionId: linked.json().connection.id,
+      text: 'Send ₦50,000 to 0123456789 Access Bank for inventory'
+    }
+  });
+  assert.equal(prepared.statusCode, 200);
+  assert.equal(prepared.json().command.command, 'PAYMENT');
+  assert.equal(prepared.json().approval.status, 'AWAITING_IN_APP_APPROVAL');
+
+  const approvals = await app.inject({ method: 'GET', url: '/v1/whatsapp/approvals', headers: { 'x-app-mode': 'DEMO' } });
+  assert.equal(approvals.json().approvals.length, 1);
+  const home = await app.inject({ method: 'GET', url: '/v1/mobile/home', headers: { 'x-app-mode': 'DEMO' } });
+  assert.equal(home.json().wallet.availableNgn, '500000.00');
+  await app.close();
+});

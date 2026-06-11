@@ -15,8 +15,11 @@ test('demo and live users remain explicitly isolated', () => {
 test('seeded demo ecosystem is realistic, deterministic, and newest first', () => {
   const store = createMemoryStore(seedDemoData());
   const tokens = store.listTokens('DEMO');
-  assert.deepEqual(tokens.map((token) => token.name), ['Naija Frog', 'Sabi Cat', 'Jollof Wars']);
-  assert.equal(tokens.every((token) => token.mint.length > 20 && token.source === 'Demo market simulator'), true);
+  assert.deepEqual(tokens.map((token) => token.name), ['Based Pepe', 'Pepe', 'Bonk', 'No Dulling', '1inch Dog']);
+  assert.equal(tokens.every((token) => token.mint.length > 20 && token.source.includes('Demo')), true);
+  assert.deepEqual([...new Set(tokens.map((token) => token.chain))], ['BASE', 'ETHEREUM', 'SOLANA', 'BNB_CHAIN']);
+  assert.equal(tokens.filter((token) => token.sourceMode === 'DEX').length, 4);
+  assert.equal(tokens.filter((token) => token.sourceMode === 'EARLY_SOLANA').length, 1);
   assert.equal(store.listAiPaymentDrafts({ mode: 'DEMO' }).length, 0);
   assert.equal(store.listP2pOrders({ mode: 'DEMO' }).length, 2);
   assert.equal(store.listAlerts('DEMO')[0]?.title, 'Runner score jumped to 91');

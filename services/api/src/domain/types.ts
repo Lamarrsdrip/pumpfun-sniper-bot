@@ -107,6 +107,13 @@ export type TokenSnapshot = {
   riskScore: number;
   change24h: number;
   source: string;
+  sourceMode: 'DEX' | 'EARLY_SOLANA' | 'WATCHLIST';
+  chain: 'SOLANA' | 'ETHEREUM' | 'BASE' | 'BNB_CHAIN' | 'POLYGON' | 'ARBITRUM' | 'OPTIMISM' | 'TRON';
+  dex?: string;
+  pairAddress?: string;
+  ageMinutes: number;
+  buyPressurePercent: number;
+  contractWarnings: string[];
   observedAt: string;
 };
 
@@ -200,6 +207,78 @@ export type BillPayment = {
   updatedAt: string;
 };
 
+export type WhatsappConnection = {
+  id: string;
+  userId: string;
+  mode: Mode;
+  phone: string;
+  status: 'PENDING_VERIFICATION' | 'CONNECTED' | 'PAUSED' | 'DISCONNECTED';
+  verificationCode?: string;
+  verifiedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WhatsappMessage = {
+  id: string;
+  connectionId: string;
+  userId: string;
+  mode: Mode;
+  direction: 'INBOUND' | 'OUTBOUND';
+  messageType: 'TEXT' | 'IMAGE' | 'TEMPLATE' | 'SYSTEM';
+  body: string;
+  providerMessageId?: string;
+  status: 'RECEIVED' | 'QUEUED' | 'SENT' | 'FAILED';
+  createdAt: string;
+};
+
+export type WhatsappWebhookEvent = {
+  id: string;
+  mode: Mode;
+  eventType: string;
+  providerEventId?: string;
+  signatureVerified: boolean;
+  status: 'RECEIVED' | 'PROCESSED' | 'REJECTED' | 'FAILED';
+  error?: string;
+  createdAt: string;
+};
+
+export type WhatsappCommandLog = {
+  id: string;
+  connectionId: string;
+  userId: string;
+  mode: Mode;
+  command: 'BALANCE' | 'ACCOUNT' | 'PAYMENT' | 'BILL' | 'TRANSACTIONS' | 'SUPPORT' | 'ORDERS' | 'PAUSE_AUTO_PAY' | 'RESUME_AUTO_PAY' | 'UNKNOWN';
+  input: string;
+  result: string;
+  approvalSessionId?: string;
+  createdAt: string;
+};
+
+export type WhatsappApprovalSession = {
+  id: string;
+  userId: string;
+  mode: Mode;
+  connectionId: string;
+  actionType: 'PAYMENT' | 'BILL' | 'P2P';
+  actionId: string;
+  status: 'AWAITING_IN_APP_APPROVAL' | 'APPROVED' | 'EXPIRED' | 'CANCELLED';
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WhatsappTemplate = {
+  id: string;
+  mode: Mode;
+  name: string;
+  category: 'UTILITY' | 'AUTHENTICATION' | 'MARKETING';
+  language: string;
+  status: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED';
+  body: string;
+  createdAt: string;
+};
+
 export type Trade = {
   id: string;
   mode: Mode;
@@ -239,6 +318,12 @@ export type StoreState = {
   aiPaymentDrafts: AiPaymentDraft[];
   p2pOrders: P2pOrder[];
   billPayments: BillPayment[];
+  whatsappConnections: WhatsappConnection[];
+  whatsappMessages: WhatsappMessage[];
+  whatsappWebhookEvents: WhatsappWebhookEvent[];
+  whatsappCommandLogs: WhatsappCommandLog[];
+  whatsappApprovalSessions: WhatsappApprovalSession[];
+  whatsappTemplates: WhatsappTemplate[];
   trades: Trade[];
   positions: Position[];
   sessions: Array<{ id: string; userId: string; tokenHash: string; expiresAt: string; revokedAt?: string }>;

@@ -30,9 +30,11 @@ export function seedDemoData(): StoreState {
     providers: [],
     auditEvents: [],
     tokens: [
-      { id: 'token-naijafrog', mode: 'DEMO', name: 'Naija Frog', symbol: 'NFROG', mint: '8gV4dWgLwrmZ9hG9w1R9VYkSgu8kL67hJkPUMP001', priceNgn: '0.0042', marketCapNgn: '38400000', liquidityNgn: '8200000', volume24hNgn: '12900000', holders: 1842, runnerScore: 91, riskScore: 28, change24h: 146.2, source: 'Demo market simulator', observedAt: now },
-      { id: 'token-sabi', mode: 'DEMO', name: 'Sabi Cat', symbol: 'SABI', mint: '6qTjN9d3kJr22LPp4ZdM8VtWLn8qPUMP002', priceNgn: '0.018', marketCapNgn: '71200000', liquidityNgn: '14600000', volume24hNgn: '22100000', holders: 3015, runnerScore: 84, riskScore: 36, change24h: 72.4, source: 'Demo market simulator', observedAt: '2026-06-05T17:58:00.000Z' },
-      { id: 'token-jollof', mode: 'DEMO', name: 'Jollof Wars', symbol: 'JOLLOF', mint: '4mHg2PTd7yL5nXwR3fC9sKqVaPUMP003', priceNgn: '0.00081', marketCapNgn: '11900000', liquidityNgn: '2200000', volume24hNgn: '6400000', holders: 723, runnerScore: 72, riskScore: 61, change24h: 31.6, source: 'Demo market simulator', observedAt: '2026-06-05T17:54:00.000Z' }
+      { id: 'token-base-pepe', mode: 'DEMO', name: 'Based Pepe', symbol: 'BPEPE', mint: '0x4200000000000000000000000000000000000006', priceNgn: '0.0042', marketCapNgn: '148400000', liquidityNgn: '42200000', volume24hNgn: '91800000', holders: 6842, runnerScore: 89, riskScore: 31, change24h: 64.2, source: 'DEX Screener Demo', sourceMode: 'DEX', chain: 'BASE', dex: 'Uniswap', pairAddress: '0xDEMOBASEPAIR', ageMinutes: 540, buyPressurePercent: 68, contractWarnings: [], observedAt: now },
+      { id: 'token-eth-pepe', mode: 'DEMO', name: 'Pepe', symbol: 'PEPE', mint: '0x6982508145454ce325ddbe47a25d4ec3d2311933', priceNgn: '0.018', marketCapNgn: '9700000000000', liquidityNgn: '288600000000', volume24hNgn: '516200000000', holders: 415000, runnerScore: 84, riskScore: 22, change24h: 12.4, source: 'DEX Screener Demo', sourceMode: 'DEX', chain: 'ETHEREUM', dex: 'Uniswap', pairAddress: '0xDEMOETHPAIR', ageMinutes: 1_576_800, buyPressurePercent: 57, contractWarnings: [], observedAt: '2026-06-05T17:58:00.000Z' },
+      { id: 'token-sol-bonk', mode: 'DEMO', name: 'Bonk', symbol: 'BONK', mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6C4H8NGADv2pPUMP', priceNgn: '0.00081', marketCapNgn: '3200000000000', liquidityNgn: '71400000000', volume24hNgn: '164900000000', holders: 887000, runnerScore: 82, riskScore: 26, change24h: 18.6, source: 'DEX Screener Demo', sourceMode: 'DEX', chain: 'SOLANA', dex: 'Raydium', pairAddress: 'DemoRaydiumPair', ageMinutes: 1_576_800, buyPressurePercent: 61, contractWarnings: [], observedAt: '2026-06-05T17:56:00.000Z' },
+      { id: 'token-early-solana', mode: 'DEMO', name: 'No Dulling', symbol: 'DULL', mint: '9NaijaDemoLaunch7xHighRiskPUMP004', priceNgn: '0.0067', marketCapNgn: '24700000', liquidityNgn: '5800000', volume24hNgn: '18300000', holders: 1129, runnerScore: 78, riskScore: 67, change24h: 44.8, source: 'Pump.fun Demo Stream', sourceMode: 'EARLY_SOLANA', chain: 'SOLANA', dex: 'Pump.fun', ageMinutes: 18, buyPressurePercent: 73, contractWarnings: ['EARLY_LAUNCH', 'CREATOR_UNVERIFIED'], observedAt: '2026-06-05T17:54:00.000Z' },
+      { id: 'token-bnb-dog', mode: 'DEMO', name: '1inch Dog', symbol: '1DOG', mint: '0x111111111117dc0aa78b770fa6a738034120c302', priceNgn: '0.00042', marketCapNgn: '87300000', liquidityNgn: '12100000', volume24hNgn: '34800000', holders: 2931, runnerScore: 74, riskScore: 44, change24h: 21.7, source: 'DEX Screener Demo', sourceMode: 'DEX', chain: 'BNB_CHAIN', dex: 'PancakeSwap', pairAddress: '0xDEMOBNBPAIR', ageMinutes: 2880, buyPressurePercent: 59, contractWarnings: ['TOP_HOLDERS_28_PERCENT'], observedAt: '2026-06-05T17:52:00.000Z' }
     ],
     alerts: [
       { id: 'alert-runner-1', mode: 'DEMO', title: 'Runner score jumped to 91', body: 'Naija Frog gained 428 holders in 12 minutes while liquidity remained healthy.', severity: 'OPPORTUNITY', createdAt: now },
@@ -69,6 +71,15 @@ export function seedDemoData(): StoreState {
       { id: 'p2p-demo-2', userId: 'demo-user-ada', mode: 'DEMO', exchange: 'Manual demo order', externalOrderId: 'BYB-3829077', sellerName: 'Mariam A.', bankName: 'Access Bank', accountNumber: '0234567890', accountName: 'Mariam Abdullahi', amountMinor: '4200000', asset: 'USDT', assetQuantity: '26.42', riskFlags: ['NEW_COUNTERPARTY'], status: 'REVIEW', createdAt: '2026-06-05T17:42:00.000Z', updatedAt: '2026-06-05T17:42:00.000Z' }
     ],
     billPayments: [],
+    whatsappConnections: [],
+    whatsappMessages: [],
+    whatsappWebhookEvents: [],
+    whatsappCommandLogs: [],
+    whatsappApprovalSessions: [],
+    whatsappTemplates: [
+      { id: 'wa-template-security', mode: 'DEMO', name: 'security_alert', category: 'UTILITY', language: 'en', status: 'APPROVED', body: 'MemeZo security alert: {{1}}', createdAt: now },
+      { id: 'wa-template-p2p', mode: 'DEMO', name: 'p2p_order_alert', category: 'UTILITY', language: 'en', status: 'APPROVED', body: 'New P2P order {{1}} requires attention.', createdAt: now }
+    ],
     trades: [],
     positions: [],
     sessions: [],

@@ -1,49 +1,64 @@
 import { router } from 'expo-router';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { AssetIcon, IconButton, ModePill, Page, SectionHeader } from '@/components';
-import { demoPosts, demoTokens } from '@/demo';
-import { dark } from '@/theme';
+import { AppHeader, AssetIcon, IconButton, ModePill, SectionHeader, StatusPill, TransactionRow } from '@/components';
+import { demoNotifications, demoRecipients, demoTokens, demoTransactions } from '@/demo';
+import { useSession } from '@/store';
+import { dark, depth } from '@/theme';
 
 export default function HomeScreen() {
-  return <Page>
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-      <View><Text style={{ color: dark.muted, fontSize: 13 }}>Good morning, Ada</Text><Text style={{ color: dark.text, fontSize: 26, fontWeight: '900' }}>Make your next move</Text></View>
-      <Pressable onPress={() => router.push('/profile')} style={{ width: 44, height: 44, borderRadius: 16, backgroundColor: dark.surfaceRaised, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: dark.green, fontWeight: '900' }}>AN</Text></Pressable>
-    </View>
-    <ModePill />
-    <LinearGradient colors={['#164D38', '#0D2D23', '#111B17']} style={{ padding: 20, borderRadius: 18, borderWidth: 1, borderColor: '#2F7358', gap: 8 }}>
-      <Text style={{ color: '#B6D4C5', fontSize: 12 }}>Total balance</Text>
-      <Text selectable style={{ color: dark.white, fontSize: 34, fontWeight: '900', fontVariant: ['tabular-nums'] }}>₦500,000.00</Text>
-      <Text style={{ color: dark.green, fontWeight: '800' }}>+₦8,420 today · +1.71%</Text>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: 14 }}>
+  const { balancesVisible, setBalancesVisible } = useSession();
+  return <ScrollView style={{ flex: 1, backgroundColor: dark.background }} contentContainerStyle={{ padding: 16, gap: 15, paddingBottom: 54 }} contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
+    <AppHeader greeting="Good morning, Ada" title="Your money is ready" unread={demoNotifications.filter((item) => item.unread).length} onNotifications={() => router.push('/notifications')} onProfile={() => router.push('/profile')} />
+    <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}><ModePill compact /><StatusPill label="Tier 2" tone="success" icon="shield-checkmark" /><StatusPill label="KYC verified" tone="info" /></View>
+    <LinearGradient colors={['#15583D', '#0B3526', '#101E18']} style={{ padding: 19, borderRadius: 18, borderWidth: 1, borderColor: '#39785E', gap: 8, boxShadow: depth.raised }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}><Text style={{ color: '#B9D8C9', fontSize: 12, fontWeight: '700' }}>Available balance</Text><Pressable accessibilityLabel={balancesVisible ? 'Hide balance' : 'Show balance'} onPress={() => setBalancesVisible(!balancesVisible)}><Ionicons name={balancesVisible ? 'eye-outline' : 'eye-off-outline'} size={20} color="#CDE5D9" /></Pressable></View>
+      <Text selectable style={{ color: dark.white, fontSize: 34, fontWeight: '900', fontVariant: ['tabular-nums'] }}>{balancesVisible ? '₦500,000.00' : '₦••••••••'}</Text>
+      <Text style={{ color: dark.greenBright, fontWeight: '900' }}>{balancesVisible ? '+₦8,420 today · +1.71%' : 'Daily change hidden'}</Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: 12 }}>
         <IconButton icon="add" label="Deposit" onPress={() => router.push('/deposit')} />
         <IconButton icon="arrow-up" label="Withdraw" onPress={() => router.push('/withdraw')} color={dark.cyan} />
         <IconButton icon="swap-horizontal" label="Swap" onPress={() => router.push('/swap')} color={dark.purple} />
         <IconButton icon="sparkles" label="AI Pay" onPress={() => router.push('/ai-pay')} color={dark.yellow} />
       </View>
     </LinearGradient>
-    <View style={{ flexDirection: 'row', gap: 10 }}>
-      <QuickAction title="P2P Manager" detail="Merchant payouts" onPress={() => router.push('/p2p')} />
-      <QuickAction title="Pay bills" detail="Airtime and utilities" onPress={() => router.push('/bills')} />
-      <QuickAction title="Cards" detail="Provider-ready" onPress={() => router.push('/cards')} />
+    <View style={{ flexDirection: 'row', gap: 9 }}>
+      <Insight icon="wallet-outline" label="Spent today" value="₦52,150" color={dark.cyan} />
+      <Insight icon="time-outline" label="Pending" value="1 action" color={dark.yellow} />
+      <Insight icon="gift-outline" label="Rewards" value="₦1,240" color={dark.green} />
     </View>
-    <SectionHeader title="Runner AI radar" action="See all" onPress={() => router.push('/(tabs)/discover')} />
-    <Pressable onPress={() => router.push(`/token/${demoTokens[0].mint}`)}>
-      <LinearGradient colors={['#17251F', '#101513']} style={{ borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#335444', gap: 12 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><View style={{ flexDirection: 'row', gap: 11, alignItems: 'center' }}><AssetIcon symbol="NF" /><View><Text style={{ color: dark.text, fontSize: 17, fontWeight: '900' }}>Naija Frog</Text><Text style={{ color: dark.muted, fontSize: 11 }}>NFROG · 1,842 holders</Text></View></View><View><Text style={{ color: dark.green, fontSize: 28, fontWeight: '900' }}>91</Text><Text style={{ color: dark.muted, fontSize: 9 }}>RUNNER</Text></View></View>
-        <View style={{ height: 54, flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>{[18, 24, 20, 30, 27, 39, 36, 48, 43, 54, 49, 63, 70, 66, 82, 76, 92].map((h, i) => <View key={i} style={{ flex: 1, height: h / 2, backgroundColor: i > 11 ? dark.green : '#315346', borderRadius: 2 }} />)}</View>
-        <Text style={{ color: dark.text, lineHeight: 20 }}>Holder growth and buy pressure accelerated while liquidity stayed healthy. Risk remains moderate.</Text>
-        <View style={{ flexDirection: 'row', gap: 8 }}><Tag text="+146.2%" color={dark.green} /><Tag text="Risk 28" color={dark.yellow} /><Tag text="Explosive" color={dark.purple} /></View>
+    <SectionHeader title="Send again" action="AI Pay" onPress={() => router.push('/ai-pay')} />
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 13 }}>
+      {demoRecipients.map((recipient) => <Pressable key={recipient.name} onPress={() => router.push('/ai-pay')} style={{ alignItems: 'center', width: 61, gap: 6 }}><View style={{ width: 49, height: 49, borderRadius: 18, backgroundColor: `${recipient.color}18`, borderWidth: 1, borderColor: `${recipient.color}45`, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: recipient.color, fontWeight: '900' }}>{recipient.initials}</Text></View><Text numberOfLines={1} style={{ color: dark.textSoft, fontSize: 10, fontWeight: '800' }}>{recipient.name}</Text></Pressable>)}
+      <Pressable onPress={() => router.push('/ai-pay')} style={{ alignItems: 'center', width: 61, gap: 6 }}><View style={{ width: 49, height: 49, borderRadius: 18, backgroundColor: dark.surface, borderWidth: 1, borderColor: dark.border, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="add" color={dark.green} size={20} /></View><Text style={{ color: dark.muted, fontSize: 10, fontWeight: '800' }}>New</Text></Pressable>
+    </ScrollView>
+    <Pressable onPress={() => router.push('/whatsapp')}>
+      <LinearGradient colors={['#123C2C', '#101E18']} style={{ padding: 15, borderRadius: 14, borderWidth: 1, borderColor: '#2D654D', flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+        <View style={{ width: 44, height: 44, borderRadius: 15, backgroundColor: '#25D36622', alignItems: 'center', justifyContent: 'center' }}><Ionicons name="logo-whatsapp" color="#25D366" size={24} /></View>
+        <View style={{ flex: 1 }}><Text style={{ color: dark.text, fontWeight: '900' }}>Control MemeZo from WhatsApp</Text><Text style={{ color: dark.muted, fontSize: 11, lineHeight: 17, paddingTop: 3 }}>Get alerts and prepare payments. Secure approval stays in MemeZo.</Text></View>
+        <Ionicons name="chevron-forward" color={dark.muted} size={18} />
       </LinearGradient>
     </Pressable>
-    <SectionHeader title="Trending now" action="Market" onPress={() => router.push('/(tabs)/discover')} />
+    <SectionHeader title="Needs your attention" />
+    <Pressable onPress={() => router.push('/security')} style={{ flexDirection: 'row', gap: 11, padding: 14, borderRadius: 14, backgroundColor: '#1C180D', borderWidth: 1, borderColor: '#4D3E1D', alignItems: 'center' }}><Ionicons name="shield-checkmark-outline" color={dark.yellow} size={23} /><View style={{ flex: 1 }}><Text style={{ color: dark.text, fontWeight: '900' }}>Add a backup sign-in method</Text><Text style={{ color: dark.muted, fontSize: 11, paddingTop: 3 }}>Protect withdrawals if Face ID is unavailable.</Text></View><Ionicons name="chevron-forward" color={dark.muted} /></Pressable>
+    <SectionHeader title="Recent activity" action="See all" onPress={() => router.push('/transactions')} />
+    <View style={{ backgroundColor: dark.surface, borderRadius: 14, borderWidth: 1, borderColor: dark.border, paddingHorizontal: 13 }}>{demoTransactions.slice(0, 3).map((item) => <TransactionRow key={item.id} item={item} onPress={() => router.push('/transactions')} />)}</View>
+    <View style={{ flexDirection: 'row', gap: 10 }}>
+      <FeatureTile icon="gift-outline" title="Rewards" body="Cashback and referrals" color={dark.green} onPress={() => router.push('/rewards')} />
+      <FeatureTile icon="lock-closed-outline" title="Savings" body="Build goals safely" color={dark.cyan} onPress={() => router.push('/savings')} />
+    </View>
+    <SectionHeader title="Market watch" action="Discover" onPress={() => router.push('/(tabs)/discover')} />
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-      {demoTokens.slice(0, 3).map((token) => <Pressable key={token.mint} onPress={() => router.push(`/token/${token.mint}`)} style={{ width: 164, padding: 14, borderRadius: 12, backgroundColor: dark.surface, borderWidth: 1, borderColor: dark.border, gap: 8 }}><AssetIcon symbol={token.symbol} color={token.color} size={38} /><Text style={{ color: dark.text, fontWeight: '900' }}>{token.name}</Text><Text style={{ color: dark.green, fontWeight: '900' }}>+{token.change}%</Text><Text style={{ color: dark.muted, fontSize: 11 }}>{token.marketCap} mcap</Text></Pressable>)}
+      {demoTokens.slice(0, 3).map((token) => <Pressable key={token.mint} onPress={() => router.push(`/token/${token.mint}`)} style={{ width: 174, padding: 14, borderRadius: 14, backgroundColor: dark.surface, borderWidth: 1, borderColor: dark.border, gap: 8 }}><View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><AssetIcon symbol={token.symbol} color={token.color} size={38} /><StatusPill label={token.chain} tone="info" /></View><Text numberOfLines={1} style={{ color: dark.text, fontWeight: '900' }}>{token.name}</Text><Text style={{ color: dark.green, fontSize: 17, fontWeight: '900' }}>+{token.change}%</Text><Text numberOfLines={1} style={{ color: dark.muted, fontSize: 10 }}>{token.source} · Score {token.score}</Text></Pressable>)}
     </ScrollView>
-    <SectionHeader title="Smart alerts" action="Network" onPress={() => router.push('/network')} />
-    {demoPosts.slice(0, 2).map((post, index) => <View key={post.handle} style={{ flexDirection: 'row', gap: 12, paddingVertical: 10 }}><View style={{ width: 34, height: 34, borderRadius: 12, backgroundColor: index ? '#2B2345' : '#173C2D', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: index ? dark.purple : dark.green, fontWeight: '900' }}>{index ? 'W' : 'R'}</Text></View><View style={{ flex: 1 }}><Text style={{ color: dark.text, fontWeight: '800' }}>{index ? 'Whale activity on SABI' : 'NFROG score moved 78 → 91'}</Text><Text style={{ color: dark.muted, fontSize: 12, lineHeight: 18, marginTop: 3 }}>{index ? 'A tracked wallet accumulated ₦3.8M over 11 buys.' : 'Volume acceleration confirmed the early runner signal.'}</Text></View></View>)}
-  </Page>;
+  </ScrollView>;
 }
-function Tag({ text, color }: { text: string; color: string }) { return <View style={{ paddingHorizontal: 8, paddingVertical: 5, borderRadius: 99, backgroundColor: `${color}18` }}><Text style={{ color, fontSize: 10, fontWeight: '900' }}>{text}</Text></View>; }
-function QuickAction({ title, detail, onPress }: { title: string; detail: string; onPress: () => void }) { return <Pressable onPress={onPress} style={{ flex: 1, minHeight: 78, padding: 11, borderRadius: 12, backgroundColor: dark.surface, borderWidth: 1, borderColor: dark.border }}><Text numberOfLines={2} style={{ color: dark.text, fontSize: 12, fontWeight: '900' }}>{title}</Text><Text numberOfLines={2} style={{ color: dark.muted, fontSize: 9, lineHeight: 13, paddingTop: 5 }}>{detail}</Text></Pressable>; }
+
+function Insight({ icon, label, value, color }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string; color: string }) {
+  return <View style={{ flex: 1, minWidth: 0, padding: 11, borderRadius: 12, backgroundColor: dark.surface, borderWidth: 1, borderColor: dark.border }}><Ionicons name={icon} color={color} size={17} /><Text numberOfLines={1} style={{ color: dark.muted, fontSize: 9, paddingTop: 7 }}>{label}</Text><Text numberOfLines={1} adjustsFontSizeToFit style={{ color: dark.text, fontWeight: '900', paddingTop: 3 }}>{value}</Text></View>;
+}
+
+function FeatureTile({ icon, title, body, color, onPress }: { icon: keyof typeof Ionicons.glyphMap; title: string; body: string; color: string; onPress: () => void }) {
+  return <Pressable onPress={onPress} style={{ flex: 1, minHeight: 112, padding: 14, borderRadius: 14, backgroundColor: dark.surface, borderWidth: 1, borderColor: dark.border }}><Ionicons name={icon} color={color} size={23} /><Text style={{ color: dark.text, fontWeight: '900', paddingTop: 14 }}>{title}</Text><Text style={{ color: dark.muted, fontSize: 10, paddingTop: 4 }}>{body}</Text></Pressable>;
+}

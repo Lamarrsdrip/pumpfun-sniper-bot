@@ -21,6 +21,8 @@ API Gateway / Auth / Rate Limits
         +-- Social + Community
         +-- Copy Trading
         +-- Alerts + Campaigns
+        +-- WhatsApp Command + Approval Gateway
+        +-- Multi-Chain Asset Registry
         +-- Subscriptions + Entitlements
         +-- Admin Control Plane
         |
@@ -62,7 +64,9 @@ API Gateway / Auth / Rate Limits
 
 ### Market Intelligence
 
-- Raw launch/trade/liquidity/social event ingestion
+- DEX Screener-first multi-chain pair discovery
+- Optional high-risk Pump.fun/Solana launch ingestion
+- Raw trade/liquidity/holder/social event ingestion
 - Time-window feature computation
 - Deterministic Runner Score
 - Versioned model inference
@@ -95,6 +99,34 @@ API Gateway / Auth / Rate Limits
 - Feature flags and platform incidents
 - Fees, limits, subscriptions, banners, and risk controls
 - Immutable audit logs and approval requests
+
+### WhatsApp Assistant
+
+- Meta Cloud API provider adapter and signed webhook boundary
+- Number-link verification and connection lifecycle
+- Bounded command parser for balance, account, transactions, P2P and support
+- Payment and bill preparation only; no silent money movement
+- In-app PIN/biometric approval sessions with expiry
+- Template, delivery, failure and webhook operations
+
+## Platform Evolution
+
+MemeZo launches with replaceable third-party adapters, but every service boundary is
+owned by MemeZo. Raw observations, derived scores, model versions and later outcomes
+are stored so the platform can build proprietary Runner, Risk, Whale, Smart Money,
+Momentum, Social Sentiment and Holder Growth scores.
+
+The long-term internal service boundary is:
+
+```text
+Market Aggregation -> Feature Store -> Versioned Scoring -> Outcome Learning
+        |                    |                |
+        +-- Consumer App     +-- Admin        +-- Future MemeZo APIs
+```
+
+Future commercial APIs can expose discovery, risk, wallet intelligence and scoring
+without coupling external clients to the mobile application or provider-specific
+payloads.
 
 ## Deployment
 

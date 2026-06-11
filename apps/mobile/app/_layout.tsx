@@ -25,6 +25,11 @@ export default function RootLayout() {
         <Stack.Screen name="security" options={{ title: 'Security' }} />
         <Stack.Screen name="transactions" options={{ title: 'Transactions' }} />
         <Stack.Screen name="support" options={{ title: 'Help & support' }} />
+        <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
+        <Stack.Screen name="manage-assets" options={{ title: 'Manage assets' }} />
+        <Stack.Screen name="rewards" options={{ title: 'Rewards' }} />
+        <Stack.Screen name="savings" options={{ title: 'Savings' }} />
+        <Stack.Screen name="whatsapp" options={{ title: 'WhatsApp Assistant' }} />
         <Stack.Screen name="network" options={{ title: 'Meme Network' }} />
         <Stack.Screen name="profile" options={{ title: 'Profile & settings' }} />
         <Stack.Screen name="token/[mint]" options={{ title: 'Token intelligence' }} />

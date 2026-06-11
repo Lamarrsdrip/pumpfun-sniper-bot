@@ -3,7 +3,7 @@
 ## Completed Foundation
 
 - Native Expo iOS/Android application structure.
-- Naira-first MemeZo wallet, deposits, withdrawals, discovery, token intelligence, trading review, AI Pay, P2P Manager, bills, cards, Network and Auto Sniper screens.
+- Naira-first MemeZo wallet, multi-network crypto receive/send, deposits, withdrawals, DEX-first discovery, token intelligence, AI Pay, WhatsApp Assistant, P2P Manager, bills, cards and Auto Sniper screens.
 - Working Demo API with mode isolation, sessions, double-entry ledger, fees, trade positions, transaction history and audit records.
 - Operational admin workflows for users, KYC, deposits, withdrawals, trades, tokens, providers and audit events.
 - Rules-first Runner explanations and a cost-limited Emergent configuration.
@@ -36,7 +36,8 @@ the browser or mobile app.
 | Payment backup | Flutterwave | Paystack | https://app.flutterwave.com/ |
 | KYC | Dojah | Smile ID, Prembly | https://app.dojah.io/ |
 | Phone OTP | Termii | Sendchamp | https://accounts.termii.com/ |
-| Solana RPC and webhooks | Helius | QuickNode, Alchemy | https://dashboard.helius.dev/ |
+| Multi-chain RPC and webhooks | QuickNode / Alchemy | Helius for Solana | https://dashboard.quicknode.com/ |
+| DEX pair discovery | DexScreener | Birdeye | https://dexscreener.com/ |
 | Pump launch stream | PumpPortal | Helius stream | https://pumpportal.fun/ |
 | Token market enrichment | Birdeye | DexScreener | https://bds.birdeye.so/ |
 | Quotes and swaps | Jupiter | PumpSwap adapter | https://portal.jup.ag/ |
@@ -44,6 +45,7 @@ the browser or mobile app.
 | Transaction screening | TRM Labs | Chainalysis | https://www.trmlabs.com/ |
 | Email | Resend | SendGrid, SES | https://resend.com/api-keys |
 | Push | Expo Push | Firebase and APNs | https://expo.dev/accounts |
+| WhatsApp Assistant | Meta WhatsApp Cloud API | - | https://developers.facebook.com/apps/ |
 | AI explanations | Emergent | another OpenAI-compatible provider | https://app.emergent.sh/ |
 | Crash monitoring | Sentry | - | https://sentry.io/ |
 | Product analytics | PostHog | - | https://app.posthog.com/ |
