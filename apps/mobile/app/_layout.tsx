@@ -17,6 +17,7 @@ export default function RootLayout() {
         <Stack.Screen name="crypto-deposit" options={{ title: 'Deposit crypto' }} />
         <Stack.Screen name="crypto-withdraw" options={{ title: 'Withdraw crypto' }} />
         <Stack.Screen name="swap" options={{ title: 'Swap' }} />
+        <Stack.Screen name="memezo-transfer" options={{ title: 'Send to MemeZo', presentation: 'modal' }} />
         <Stack.Screen name="ai-pay" options={{ title: 'AI Pay' }} />
         <Stack.Screen name="p2p" options={{ title: 'P2P Manager' }} />
         <Stack.Screen name="bills" options={{ title: 'Bills' }} />

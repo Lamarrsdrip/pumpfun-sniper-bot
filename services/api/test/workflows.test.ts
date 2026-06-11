@@ -158,3 +158,173 @@ test('WhatsApp demo link verifies and prepares payment without moving money', as
   assert.equal(home.json().wallet.availableNgn, '500000.00');
   await app.close();
 });
+
+test('multi-asset swap quote and Demo execution update both asset balances', async () => {
+  const app = await buildApp();
+  const quote = await app.inject({
+    method: 'POST',
+    url: '/v1/swaps/quote',
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: { fromAsset: 'NGN', toAsset: 'USDT', amount: 50000, slippagePercent: 1 }
+  });
+  assert.equal(quote.statusCode, 201);
+  assert.equal(quote.json().quote.fromAsset, 'NGN');
+  assert.ok(Number(quote.json().quote.estimatedReceive) > 0);
+  const executed = await app.inject({
+    method: 'POST',
+    url: '/v1/swaps/execute',
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: { fromAsset: 'NGN', toAsset: 'USDT', amount: 50000, slippagePercent: 1, pin: '1234', idempotencyKey: 'swap-ngn-usdt-0001' }
+  });
+  assert.equal(executed.statusCode, 201);
+  assert.equal(executed.json().swap.status, 'SUCCESSFUL');
+  assert.equal(executed.json().balances.NGN, '450000.000000');
+  assert.ok(Number(executed.json().balances.USDT) > 86.42);
+  await app.close();
+});
+
+test('MemeZo recipient resolution and internal transfer use double-entry accounting', async () => {
+  const app = await buildApp();
+  const resolved = await app.inject({
+    method: 'GET',
+    url: '/v1/transfers/recipients?q=%40tobi',
+    headers: { 'x-app-mode': 'DEMO' }
+  });
+  assert.equal(resolved.statusCode, 200);
+  assert.equal(resolved.json().recipients.length, 1);
+  assert.equal(resolved.json().recipients[0].tag, '@tobi');
+  assert.equal(resolved.json().recipients[0].verified, true);
+
+  const sent = await app.inject({
+    method: 'POST',
+    url: '/v1/transfers/internal',
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: {
+      recipientId: 'demo-user-tobi',
+      amountNgn: 25000,
+      narration: 'Lunch contribution',
+      pin: '1234',
+      idempotencyKey: 'internal-transfer-0001'
+    }
+  });
+  assert.equal(sent.statusCode, 201);
+  assert.equal(sent.json().transfer.status, 'COMPLETED');
+  assert.equal(sent.json().senderBalanceNgn, '475000.00');
+  assert.equal(sent.json().recipientBalanceNgn, '25000.00');
+  assert.match(sent.json().receipt, /^MZ-/);
+
+  const history = await app.inject({ method: 'GET', url: '/v1/transfers/internal', headers: { 'x-app-mode': 'DEMO' } });
+  assert.equal(history.json().transfers.length, 1);
+  assert.equal(history.json().transfers[0].recipientName, 'Tobi Adeyemi');
+  await app.close();
+});
+
+test('internal transfer rejects self transfer and invalid PIN', async () => {
+  const app = await buildApp();
+  const self = await app.inject({
+    method: 'POST',
+    url: '/v1/transfers/internal',
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: {
+      recipientId: 'demo-user-ada',
+      amountNgn: 1000,
+      pin: '1234',
+      idempotencyKey: 'internal-transfer-self'
+    }
+  });
+  assert.equal(self.statusCode, 409);
+  assert.equal(self.json().code, 'SELF_TRANSFER_NOT_ALLOWED');
+
+  const badPin = await app.inject({
+    method: 'POST',
+    url: '/v1/transfers/internal',
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: {
+      recipientId: 'demo-user-tobi',
+      amountNgn: 1000,
+      pin: '0000',
+      idempotencyKey: 'internal-transfer-pin'
+    }
+  });
+  assert.equal(badPin.statusCode, 401);
+  assert.equal(badPin.json().code, 'INVALID_DEMO_PIN');
+  await app.close();
+});
+
+test('WhatsApp settings allow bounded PIN approval but force large payments into the app', async () => {
+  const app = await buildApp();
+  const linked = await app.inject({
+    method: 'POST',
+    url: '/v1/whatsapp/link',
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: { phone: '+2348012345678' }
+  });
+  await app.inject({
+    method: 'POST',
+    url: '/v1/whatsapp/verify',
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: { connectionId: linked.json().connection.id, code: '246810' }
+  });
+  const settings = await app.inject({
+    method: 'PUT',
+    url: '/v1/whatsapp/settings',
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: {
+      paymentsEnabled: true,
+      dailyLimitNgn: 100000,
+      perTransactionLimitNgn: 50000,
+      requireInAppAboveNgn: 50000,
+      trustedRecipients: ['0123456789'],
+      p2pAutoPayPaused: false
+    }
+  });
+  assert.equal(settings.statusCode, 200);
+  assert.equal(settings.json().settings.perTransactionLimitMinor, '5000000');
+
+  const prepared = await app.inject({
+    method: 'POST',
+    url: '/v1/whatsapp/command',
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: {
+      connectionId: linked.json().connection.id,
+      text: 'Send ₦25,000 to 0123456789 Access Bank for inventory'
+    }
+  });
+  const approved = await app.inject({
+    method: 'POST',
+    url: `/v1/whatsapp/approvals/${prepared.json().approval.id}/approve`,
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: {
+      pin: '1234',
+      approvalChannel: 'WHATSAPP_PIN',
+      idempotencyKey: 'whatsapp-approval-0001'
+    }
+  });
+  assert.equal(approved.statusCode, 200);
+  assert.equal(approved.json().approval.status, 'APPROVED');
+  assert.equal(approved.json().payment.status, 'PAID');
+  assert.equal(approved.json().balanceNgn, '475000.00');
+
+  const large = await app.inject({
+    method: 'POST',
+    url: '/v1/whatsapp/command',
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: {
+      connectionId: linked.json().connection.id,
+      text: 'Send ₦60,000 to 0123456789 Access Bank for inventory'
+    }
+  });
+  const blocked = await app.inject({
+    method: 'POST',
+    url: `/v1/whatsapp/approvals/${large.json().approval.id}/approve`,
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: {
+      pin: '1234',
+      approvalChannel: 'WHATSAPP_PIN',
+      idempotencyKey: 'whatsapp-approval-large'
+    }
+  });
+  assert.equal(blocked.statusCode, 409);
+  assert.equal(blocked.json().code, 'IN_APP_APPROVAL_REQUIRED');
+  await app.close();
+});

@@ -19,6 +19,7 @@ import type {
   AiPaymentDraft,
   AuditEvent,
   BillPayment,
+  InternalTransfer,
   Mode,
   MoneyRequest,
   P2pOrder,
@@ -26,6 +27,7 @@ import type {
   Trade,
   User,
   WhatsappApprovalSession,
+  WhatsappAutomationSettings,
   WhatsappCommandLog,
   WhatsappConnection,
   WhatsappMessage,
@@ -259,6 +261,166 @@ export async function buildApp(options: AppOptions = {}) {
       transactions: store.listMoneyRequests({ mode: context.mode, userId: context.user.id })
     };
   });
+  app.get('/v1/wallet/assets', async (request) => {
+    const context = requestContext(request, store, environment);
+    const policies = assetPolicies.get(context.mode)!.filter((asset) => asset.enabled);
+    return {
+      mode: context.mode,
+      assets: policies.map((asset) => {
+        const balanceMinor = userWalletBalanceMinor(store, context.user.id, context.mode, asset.symbol);
+        const balance = assetUnits(asset.symbol, balanceMinor);
+        return {
+          ...asset,
+          balance,
+          valueNgn: (balance * assetRateNgn(asset.symbol)).toFixed(2)
+        };
+      })
+    };
+  });
+  app.get('/v1/transfers/recipients', async (request) => {
+    const context = requestContext(request, store, environment);
+    const query = z.object({ q: z.string().trim().min(2).max(120) }).parse(request.query).q;
+    return {
+      recipients: store.listUsers({ mode: context.mode, query })
+        .filter((user) => user.id !== context.user.id && user.status === 'ACTIVE')
+        .slice(0, 8)
+        .map((user) => ({
+          id: user.id,
+          name: user.name,
+          tag: user.handle,
+          maskedPhone: maskPhone(user.phone),
+          verified: user.kycStatus === 'APPROVED'
+        }))
+    };
+  });
+  app.get('/v1/transfers/internal', async (request) => {
+    const context = requestContext(request, store, environment);
+    return {
+      transfers: store.listInternalTransfers({ mode: context.mode, userId: context.user.id }).map((transfer) => ({
+        ...transfer,
+        direction: transfer.senderId === context.user.id ? 'SENT' : 'RECEIVED'
+      }))
+    };
+  });
+  app.post('/v1/transfers/internal', async (request, reply) => {
+    const context = requestContext(request, store, environment);
+    const body = z.object({
+      recipientId: z.string().min(4),
+      amountNgn: money,
+      narration: z.string().trim().max(120).default('MemeZo transfer'),
+      pin: z.string().regex(/^\d{4}$/),
+      idempotencyKey: z.string().min(8).max(120)
+    }).parse(request.body);
+    if (body.recipientId === context.user.id) return reply.status(409).send({ code: 'SELF_TRANSFER_NOT_ALLOWED', message: 'Choose another MemeZo user.' });
+    if (context.mode === 'DEMO' && body.pin !== '1234') return reply.status(401).send({ code: 'INVALID_DEMO_PIN', message: 'The demo transaction PIN is 1234.' });
+    const recipient = store.getUser(body.recipientId);
+    if (!recipient || recipient.mode !== context.mode || recipient.status !== 'ACTIVE') {
+      return reply.status(404).send({ code: 'RECIPIENT_NOT_FOUND', message: 'The MemeZo recipient is unavailable.' });
+    }
+    if (recipient.kycStatus !== 'APPROVED') return reply.status(409).send({ code: 'RECIPIENT_NOT_VERIFIED', message: 'This recipient cannot receive internal transfers yet.' });
+    if (context.mode === 'LIVE') return providerRequired(reply, 'payments', 'Live internal-transfer settlement is not enabled.');
+    const amountMinor = toMinor(body.amountNgn);
+    const senderWallet = requiredAssetWallet(store, context.user.id, context.mode, 'NGN');
+    const recipientWallet = requiredAssetWallet(store, recipient.id, context.mode, 'NGN');
+    ensureSufficientBalance(store, senderWallet.id, amountMinor);
+    const transaction = postLedgerTransaction(store, {
+      mode: context.mode,
+      idempotencyKey: body.idempotencyKey,
+      description: `MemeZo transfer to ${recipient.name}`,
+      entries: [
+        { accountId: senderWallet.id, side: 'DEBIT', amountMinor: amountMinor.toString() },
+        { accountId: recipientWallet.id, side: 'CREDIT', amountMinor: amountMinor.toString() }
+      ],
+      metadata: { senderId: context.user.id, recipientId: recipient.id, narration: body.narration }
+    });
+    const receipt = `MZ-${transaction.id.slice(-8).toUpperCase()}`;
+    const transfer: InternalTransfer = store.saveInternalTransfer({
+      id: `transfer_${randomUUID()}`,
+      mode: context.mode,
+      senderId: context.user.id,
+      recipientId: recipient.id,
+      recipientName: recipient.name,
+      recipientHandle: recipient.handle,
+      amountMinor: amountMinor.toString(),
+      feeMinor: '0',
+      narration: body.narration,
+      status: 'COMPLETED',
+      ledgerTransactionId: transaction.id,
+      receipt,
+      createdAt: transaction.createdAt
+    });
+    return reply.status(201).send({
+      transfer,
+      senderBalanceNgn: fromMinor(userWalletBalanceMinor(store, context.user.id, context.mode)),
+      recipientBalanceNgn: fromMinor(userWalletBalanceMinor(store, recipient.id, context.mode)),
+      balanceNgn: fromMinor(userWalletBalanceMinor(store, context.user.id, context.mode)),
+      receipt
+    });
+  });
+  app.post('/v1/swaps/quote', async (request, reply) => {
+    const context = requestContext(request, store, environment);
+    const body = z.object({
+      fromAsset: z.string().trim().toUpperCase().min(2).max(10),
+      toAsset: z.string().trim().toUpperCase().min(2).max(10),
+      amount: z.coerce.number().positive(),
+      slippagePercent: z.coerce.number().min(0.1).max(10).default(1)
+    }).parse(request.body);
+    if (body.fromAsset === body.toAsset) return reply.status(400).send({ code: 'INVALID_SWAP_ROUTE', message: 'Choose two different assets.' });
+    const policies = assetPolicies.get(context.mode)!;
+    const fromPolicy = policies.find((asset) => asset.symbol === body.fromAsset && asset.enabled && asset.swaps);
+    const toPolicy = policies.find((asset) => asset.symbol === body.toAsset && asset.enabled && asset.swaps);
+    if (!fromPolicy || !toPolicy) return reply.status(409).send({ code: 'SWAP_ROUTE_DISABLED', message: 'One of these assets is not enabled for swaps.' });
+    if (context.mode === 'LIVE') return providerRequired(reply, 'trading', 'A live multi-chain swap provider is not connected.');
+    return reply.status(201).send({ quote: buildSwapQuote(body.fromAsset, body.toAsset, body.amount, body.slippagePercent, context.mode) });
+  });
+  app.post('/v1/swaps/execute', async (request, reply) => {
+    const context = requestContext(request, store, environment);
+    const body = z.object({
+      fromAsset: z.string().trim().toUpperCase().min(2).max(10),
+      toAsset: z.string().trim().toUpperCase().min(2).max(10),
+      amount: z.coerce.number().positive(),
+      slippagePercent: z.coerce.number().min(0.1).max(10).default(1),
+      pin: z.string().regex(/^\d{4}$/),
+      idempotencyKey: z.string().min(8).max(120)
+    }).parse(request.body);
+    if (context.mode === 'LIVE') return providerRequired(reply, 'trading', 'A live multi-chain swap provider is not connected.');
+    if (body.pin !== '1234') return reply.status(401).send({ code: 'INVALID_DEMO_PIN', message: 'The demo transaction PIN is 1234.' });
+    const quote = buildSwapQuote(body.fromAsset, body.toAsset, body.amount, body.slippagePercent, context.mode);
+    const sourceWallet = requiredAssetWallet(store, context.user.id, context.mode, body.fromAsset);
+    const targetWallet = requiredAssetWallet(store, context.user.id, context.mode, body.toAsset);
+    const sourceReserve = requiredPlatformAssetWallet(store, context.mode, body.fromAsset);
+    const targetReserve = requiredPlatformAssetWallet(store, context.mode, body.toAsset);
+    const sourceMinor = assetMinor(body.fromAsset, body.amount);
+    const targetMinor = assetMinor(body.toAsset, Number(quote.estimatedReceive));
+    ensureSufficientBalance(store, sourceWallet.id, sourceMinor);
+    postLedgerTransaction(store, {
+      mode: context.mode,
+      idempotencyKey: `${body.idempotencyKey}:source`,
+      description: `Swap ${body.fromAsset} to ${body.toAsset} source leg`,
+      entries: [
+        { accountId: sourceWallet.id, side: 'DEBIT', amountMinor: sourceMinor.toString() },
+        { accountId: sourceReserve.id, side: 'CREDIT', amountMinor: sourceMinor.toString() }
+      ]
+    });
+    postLedgerTransaction(store, {
+      mode: context.mode,
+      idempotencyKey: `${body.idempotencyKey}:target`,
+      description: `Swap ${body.fromAsset} to ${body.toAsset} target leg`,
+      entries: [
+        { accountId: targetReserve.id, side: 'DEBIT', amountMinor: targetMinor.toString() },
+        { accountId: targetWallet.id, side: 'CREDIT', amountMinor: targetMinor.toString() }
+      ]
+    });
+    return reply.status(201).send({
+      swap: { ...quote, status: 'SUCCESSFUL', executedAt: new Date().toISOString() },
+      balances: {
+        [body.fromAsset]: assetUnits(body.fromAsset, accountBalanceMinor(store, sourceWallet.id)).toFixed(6),
+        [body.toAsset]: assetUnits(body.toAsset, accountBalanceMinor(store, targetWallet.id)).toFixed(6)
+      },
+      receipt: `MZ-SWAP-${randomUUID().slice(0, 8).toUpperCase()}`,
+      warning: 'Demo ledger execution only. No bank or blockchain provider was called.'
+    });
+  });
   app.get('/v1/bounties', async (_, reply) => reply.status(410).send({ code: 'FEATURE_RETIRED', message: 'Bounties were replaced by MemeZo AI Payments.' }));
   app.get('/v1/bot/settings', async (request) => {
     const context = requestContext(request, store, environment);
@@ -464,13 +626,47 @@ export async function buildApp(options: AppOptions = {}) {
   app.get('/v1/whatsapp/status', async (request) => {
     const context = requestContext(request, store, environment);
     const connection = store.listWhatsappConnections({ userId: context.user.id, mode: context.mode })[0];
+    const settings = whatsappSettings(store, context.user.id, context.mode);
     return {
       connection: connection || null,
+      settings,
       provider: context.mode === 'DEMO'
         ? { status: 'DEMO', message: 'Demo connection flow only. No WhatsApp message is sent.' }
         : { status: providerFamilyReady(store, 'messaging') ? 'CONNECTED' : 'UNCONFIGURED', message: providerFamilyReady(store, 'messaging') ? 'WhatsApp provider configured.' : 'Meta WhatsApp Business credentials are required.' },
       commands: ['balance', 'account', 'transactions', 'orders', 'pause auto pay', 'resume auto pay', 'send money instruction']
     };
+  });
+  app.get('/v1/whatsapp/settings', async (request) => {
+    const context = requestContext(request, store, environment);
+    return { settings: whatsappSettings(store, context.user.id, context.mode) };
+  });
+  app.put('/v1/whatsapp/settings', async (request) => {
+    const context = requestContext(request, store, environment);
+    const current = whatsappSettings(store, context.user.id, context.mode);
+    const body = z.object({
+      paymentsEnabled: z.boolean(),
+      p2pAlertsEnabled: z.boolean().optional(),
+      p2pAutoPayPaused: z.boolean(),
+      whatsappPinLimitNgn: z.number().min(0).max(1_000_000).optional(),
+      perTransactionLimitNgn: z.number().min(0).max(5_000_000).optional(),
+      requireInAppAboveNgn: z.number().min(0).max(5_000_000).optional(),
+      dailyLimitNgn: z.number().min(0).max(10_000_000),
+      trustedRecipients: z.array(z.string().regex(/^\d{10}$/)).max(50)
+    }).parse(request.body);
+    const perTransactionLimitNgn = body.perTransactionLimitNgn ?? body.whatsappPinLimitNgn ?? 0;
+    const requireInAppAboveNgn = body.requireInAppAboveNgn ?? perTransactionLimitNgn;
+    const updated = store.saveWhatsappAutomationSettings({
+      ...current,
+      paymentsEnabled: body.paymentsEnabled,
+      p2pAlertsEnabled: body.p2pAlertsEnabled ?? current.p2pAlertsEnabled,
+      p2pAutoPayPaused: body.p2pAutoPayPaused,
+      perTransactionLimitMinor: toMinor(perTransactionLimitNgn).toString(),
+      requireInAppAboveMinor: toMinor(requireInAppAboveNgn).toString(),
+      dailyLimitMinor: toMinor(body.dailyLimitNgn).toString(),
+      trustedRecipients: [...new Set(body.trustedRecipients)],
+      updatedAt: new Date().toISOString()
+    });
+    return { settings: updated };
   });
   app.post('/v1/whatsapp/link', async (request, reply) => {
     const context = requestContext(request, store, environment);
@@ -529,8 +725,12 @@ export async function buildApp(options: AppOptions = {}) {
       result = account ? `${account.bankName}: ${account.accountNumber}, ${account.accountName}.` : 'No virtual account is available.';
     } else if (command === 'TRANSACTIONS') result = 'Open MemeZo to view verified transactions and receipts.';
     else if (command === 'ORDERS') result = `${store.listP2pOrders({ userId: context.user.id, mode: context.mode }).filter((item) => ['PENDING', 'REVIEW'].includes(item.status)).length} P2P orders need attention.`;
-    else if (command === 'PAUSE_AUTO_PAY') result = 'Auto-pay pause prepared. Open MemeZo to confirm this merchant-control change.';
-    else if (command === 'RESUME_AUTO_PAY') result = 'Auto-pay resume prepared. Open MemeZo to confirm this merchant-control change.';
+    else if (command === 'PAUSE_AUTO_PAY' || command === 'RESUME_AUTO_PAY') {
+      const currentSettings = whatsappSettings(store, context.user.id, context.mode);
+      const paused = command === 'PAUSE_AUTO_PAY';
+      store.saveWhatsappAutomationSettings({ ...currentSettings, p2pAutoPayPaused: paused, updatedAt: now });
+      result = paused ? 'P2P auto-pay is paused. Existing paid orders are unchanged.' : 'P2P auto-pay is active again and remains bounded by your saved rules.';
+    }
     else if (command === 'PAYMENT') {
       const parsed = parsePaymentInstruction(body.text);
       if (!parsed.amountNgn || !parsed.accountNumber) return reply.status(422).send({ code: 'PAYMENT_DETAILS_INCOMPLETE', message: 'Include a valid amount and 10-digit account number.' });
@@ -554,7 +754,64 @@ export async function buildApp(options: AppOptions = {}) {
   });
   app.get('/v1/whatsapp/approvals', async (request) => {
     const context = requestContext(request, store, environment);
-    return { approvals: store.listWhatsappApprovalSessions({ userId: context.user.id, mode: context.mode }) };
+    return {
+      approvals: store.listWhatsappApprovalSessions({ userId: context.user.id, mode: context.mode }).map((approval) => ({
+        ...approval,
+        payment: approval.actionType === 'PAYMENT' ? store.getAiPaymentDraft(approval.actionId) : undefined
+      }))
+    };
+  });
+  app.post('/v1/whatsapp/approvals/:id/approve', async (request, reply) => {
+    const context = requestContext(request, store, environment);
+    const approval = store.getWhatsappApprovalSession((request.params as { id: string }).id);
+    if (!approval || approval.userId !== context.user.id || approval.mode !== context.mode) return reply.status(404).send({ code: 'APPROVAL_NOT_FOUND', message: 'WhatsApp approval was not found.' });
+    if (approval.status !== 'AWAITING_IN_APP_APPROVAL' || Date.parse(approval.expiresAt) <= Date.now()) return reply.status(409).send({ code: 'APPROVAL_EXPIRED', message: 'This approval is no longer active.' });
+    const body = z.object({
+      pin: z.string().regex(/^\d{4}$/),
+      channel: z.enum(['WHATSAPP_PIN', 'IN_APP']).optional(),
+      approvalChannel: z.enum(['WHATSAPP_PIN', 'IN_APP']).optional(),
+      idempotencyKey: z.string().min(8).max(120)
+    }).parse(request.body);
+    const approvalChannel = body.approvalChannel ?? body.channel ?? 'IN_APP';
+    if (context.mode === 'DEMO' && body.pin !== '1234') return reply.status(401).send({ code: 'INVALID_DEMO_PIN', message: 'The demo transaction PIN is 1234.' });
+    if (approval.actionType !== 'PAYMENT') return reply.status(409).send({ code: 'UNSUPPORTED_APPROVAL', message: 'This approval type is not executable yet.' });
+    const payment = store.getAiPaymentDraft(approval.actionId);
+    if (!payment) return reply.status(404).send({ code: 'PAYMENT_NOT_FOUND', message: 'Prepared payment was not found.' });
+    const settings = whatsappSettings(store, context.user.id, context.mode);
+    if (!settings.paymentsEnabled) return reply.status(403).send({ code: 'WHATSAPP_PAYMENTS_DISABLED', message: 'Enable WhatsApp payment preparation in MemeZo settings first.' });
+    const safeForWhatsappPin = BigInt(payment.amountMinor) <= BigInt(settings.perTransactionLimitMinor)
+      && BigInt(payment.amountMinor) <= BigInt(settings.requireInAppAboveMinor)
+      && settings.trustedRecipients.includes(payment.accountNumber)
+      && payment.riskFlags.length === 0;
+    if (approvalChannel === 'WHATSAPP_PIN' && !safeForWhatsappPin) {
+      return reply.status(409).send({ code: 'IN_APP_APPROVAL_REQUIRED', message: 'This payment exceeds your WhatsApp rule or recipient trust settings. Approve it inside MemeZo.' });
+    }
+    if (whatsappSpendToday(store, context.user.id, context.mode) + BigInt(payment.amountMinor) > BigInt(settings.dailyLimitMinor)) {
+      return reply.status(409).send({ code: 'WHATSAPP_DAILY_LIMIT_REACHED', message: 'Your WhatsApp payment limit has been reached for today.' });
+    }
+    if (context.mode === 'LIVE') return providerRequired(reply, 'payments', 'Bank transfer execution is not connected.');
+    const wallet = requiredWallet(store, context.user.id, context.mode);
+    const platform = requiredPlatformWallet(store, context.mode);
+    ensureSufficientBalance(store, wallet.id, BigInt(payment.amountMinor));
+    postLedgerTransaction(store, {
+      mode: context.mode,
+      idempotencyKey: body.idempotencyKey,
+      description: `WhatsApp prepared payment to ${payment.accountName}`,
+      entries: [
+        { accountId: wallet.id, side: 'DEBIT', amountMinor: payment.amountMinor },
+        { accountId: platform.id, side: 'CREDIT', amountMinor: payment.amountMinor }
+      ],
+      metadata: { paymentId: payment.id, approvalId: approval.id, channel: approvalChannel }
+    });
+    const now = new Date().toISOString();
+    const paid = store.saveAiPaymentDraft({ ...payment, status: 'PAID', updatedAt: now });
+    const completed = store.saveWhatsappApprovalSession({ ...approval, status: 'APPROVED', updatedAt: now });
+    return {
+      approval: completed,
+      payment: paid,
+      receipt: `MZ-WA-${completed.id.slice(-8).toUpperCase()}`,
+      balanceNgn: fromMinor(userWalletBalanceMinor(store, context.user.id, context.mode))
+    };
   });
   app.get('/v1/whatsapp/webhook', async (request, reply) => {
     const query = z.object({ 'hub.mode': z.string(), 'hub.verify_token': z.string(), 'hub.challenge': z.string() }).parse(request.query);
@@ -1088,9 +1345,22 @@ function requiredWallet(store: MemoryStore, userId: string, mode: Mode) {
   return wallet;
 }
 
+function requiredAssetWallet(store: MemoryStore, userId: string, mode: Mode, asset: string) {
+  let wallet = store.listWallets(userId, mode).find((item) => item.asset === asset);
+  if (!wallet) wallet = store.saveWallet({ id: `${userId}-${asset.toLowerCase()}`, userId, mode, asset, label: `${asset} Wallet` });
+  return wallet;
+}
+
 function requiredPlatformWallet(store: MemoryStore, mode: Mode) {
   let wallet = store.listWallets(mode === 'DEMO' ? 'platform-demo' : 'platform-live', mode).find((item) => item.asset === 'NGN');
   if (!wallet) wallet = store.saveWallet({ id: `platform-${mode.toLowerCase()}-funding-ngn`, userId: `platform-${mode.toLowerCase()}`, mode, asset: 'NGN', label: `${mode} funding reserve` });
+  return wallet;
+}
+
+function requiredPlatformAssetWallet(store: MemoryStore, mode: Mode, asset: string) {
+  const userId = mode === 'DEMO' ? 'platform-demo' : 'platform-live';
+  let wallet = store.listWallets(userId, mode).find((item) => item.asset === asset);
+  if (!wallet) wallet = store.saveWallet({ id: `platform-${mode.toLowerCase()}-funding-${asset.toLowerCase()}`, userId, mode, asset, label: `${mode} ${asset} reserve` });
   return wallet;
 }
 
@@ -1202,6 +1472,38 @@ function safeTokenEqual(supplied: string, expected: string) {
 }
 function toMinor(value: number) { return BigInt(Math.round(value * 100)); }
 function fromMinor(value: bigint) { return (Number(value) / 100).toFixed(2); }
+function assetScale(asset: string) { return asset === 'NGN' ? 100 : 1_000_000; }
+function assetMinor(asset: string, value: number) { return BigInt(Math.round(value * assetScale(asset))); }
+function assetUnits(asset: string, value: bigint) { return Number(value) / assetScale(asset); }
+function assetRateNgn(asset: string) {
+  const rates: Record<string, number> = { NGN: 1, USDT: 1570, USDC: 1572, BTC: 109_083_333, ETH: 618_710, SOL: 246_406, BNB: 99_524, TRX: 230, POL: 363, TON: 3748 };
+  return rates[asset] || 0;
+}
+function buildSwapQuote(fromAsset: string, toAsset: string, amount: number, slippagePercent: number, mode: Mode) {
+  const fromRate = assetRateNgn(fromAsset);
+  const toRate = assetRateNgn(toAsset);
+  if (!fromRate || !toRate) throw Object.assign(new Error('No price route is available for this asset pair.'), { statusCode: 409, code: 'SWAP_ROUTE_UNAVAILABLE' });
+  const sourceValueNgn = amount * fromRate;
+  const feeNgn = Math.max(25, sourceValueNgn * 0.01);
+  const receive = Math.max(0, (sourceValueNgn - feeNgn) / toRate);
+  return {
+    id: `swap_quote_${randomUUID()}`,
+    mode,
+    fromAsset,
+    toAsset,
+    amount: amount.toFixed(fromAsset === 'NGN' ? 2 : 6),
+    sourceValueNgn: sourceValueNgn.toFixed(2),
+    rate: (fromRate / toRate).toFixed(8),
+    feeNgn: feeNgn.toFixed(2),
+    priceImpactPercent: sourceValueNgn >= 1_000_000 ? 0.42 : 0.18,
+    slippagePercent,
+    estimatedReceive: receive.toFixed(toAsset === 'NGN' ? 2 : 6),
+    route: `${fromAsset} → MemeZo demo router → ${toAsset}`,
+    liquiditySource: 'MemeZo Demo Rate Book',
+    expiresAt: new Date(Date.now() + 30_000).toISOString()
+  };
+}
+function maskPhone(phone: string) { return `${phone.slice(0, 4)}••••${phone.slice(-3)}`; }
 function sumMoney(items: MoneyRequest[]) { return fromMinor(items.reduce((sum, item) => sum + BigInt(item.amountMinor), 0n)); }
 function runnerCategory(score: number, risk: number) { return risk >= 70 ? 'High Risk Runner' : score >= 90 ? 'Explosive Runner' : score >= 80 ? 'Strong Runner' : score >= 65 ? 'Potential Runner' : 'Avoid'; }
 function tokenExplanation(token: { runnerScore: number; riskScore: number; liquidityNgn: string; holders: number }) {
@@ -1209,7 +1511,7 @@ function tokenExplanation(token: { runnerScore: number; riskScore: number; liqui
 }
 function emptyState() {
   const seeded = seedDemoData();
-  return { ...seeded, users: [], wallets: [], ledgerTransactions: [], kycCases: [], tokens: [], alerts: [], moneyRequests: [], virtualAccounts: [], aiPaymentDrafts: [], p2pOrders: [], billPayments: [], whatsappConnections: [], whatsappMessages: [], whatsappWebhookEvents: [], whatsappCommandLogs: [], whatsappApprovalSessions: [], whatsappTemplates: [], trades: [], positions: [] };
+  return { ...seeded, users: [], wallets: [], ledgerTransactions: [], kycCases: [], tokens: [], alerts: [], moneyRequests: [], virtualAccounts: [], aiPaymentDrafts: [], internalTransfers: [], p2pOrders: [], billPayments: [], whatsappConnections: [], whatsappMessages: [], whatsappWebhookEvents: [], whatsappCommandLogs: [], whatsappApprovalSessions: [], whatsappAutomationSettings: [], whatsappTemplates: [], trades: [], positions: [] };
 }
 
 function defaultAssetPolicies(): AssetPolicy[] {
@@ -1267,4 +1569,32 @@ function parseWhatsappCommand(input: string): WhatsappCommandLog['command'] {
 
 function maskWhatsappConnection(connection: WhatsappConnection) {
   return { ...connection, phone: `${connection.phone.slice(0, 4)}••••${connection.phone.slice(-3)}`, verificationCode: undefined };
+}
+
+function whatsappSettings(store: MemoryStore, userId: string, mode: Mode): WhatsappAutomationSettings {
+  const current = store.getWhatsappAutomationSettings(userId, mode);
+  if (current) return current;
+  return store.saveWhatsappAutomationSettings({
+    id: `wa_settings_${randomUUID()}`,
+    userId,
+    mode,
+    paymentsEnabled: false,
+    p2pAlertsEnabled: true,
+    p2pAutoPayPaused: true,
+    perTransactionLimitMinor: '0',
+    requireInAppAboveMinor: '0',
+    dailyLimitMinor: '0',
+    trustedRecipients: [],
+    updatedAt: new Date().toISOString()
+  });
+}
+
+function whatsappSpendToday(store: MemoryStore, userId: string, mode: Mode) {
+  const today = new Date().toISOString().slice(0, 10);
+  return store.listWhatsappApprovalSessions({ userId, mode })
+    .filter((approval) => approval.status === 'APPROVED' && approval.updatedAt.slice(0, 10) === today)
+    .reduce((sum, approval) => {
+      const payment = approval.actionType === 'PAYMENT' ? store.getAiPaymentDraft(approval.actionId) : undefined;
+      return sum + BigInt(payment?.amountMinor || 0);
+    }, 0n);
 }

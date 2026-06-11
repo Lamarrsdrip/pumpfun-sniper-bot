@@ -57,10 +57,8 @@ export const demoNotifications = [
 ];
 
 export const demoRecipients = [
-  { name: 'Chinedu', bank: 'Access', initials: 'CO', color: '#25D995' },
-  { name: 'Amina', bank: 'GTBank', initials: 'AM', color: '#B49AFF' },
-  { name: 'Mum', bank: 'UBA', initials: 'MN', color: '#F3C969' },
-  { name: 'Vendor', bank: 'Moniepoint', initials: 'VN', color: '#5BC8EB' }
+  { name: 'Tobi', bank: 'MemeZo', initials: 'TA', color: '#25D995' },
+  { name: 'Zainab', bank: 'MemeZo', initials: 'ZM', color: '#B49AFF' }
 ];
 
 export const demoPosts = [

@@ -8,7 +8,7 @@ const icon = (name: keyof typeof Ionicons.glyphMap) => ({ color, size }: { color
 export default function TabsLayout() {
   return <Tabs screenOptions={{
     headerShown: false,
-    tabBarStyle: { backgroundColor: '#0C1210', borderTopColor: dark.border, height: 78, paddingTop: 8, paddingBottom: 9 },
+    tabBarStyle: { backgroundColor: '#0B1410', borderTopColor: '#17271F', height: 76, paddingTop: 7, paddingBottom: 9, position: 'absolute' },
     tabBarLabelStyle: { fontSize: 10, fontWeight: '700' },
     tabBarActiveTintColor: dark.green,
     tabBarInactiveTintColor: dark.muted

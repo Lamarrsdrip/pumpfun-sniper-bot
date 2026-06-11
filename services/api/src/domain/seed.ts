@@ -5,27 +5,48 @@ const now = '2026-06-05T18:00:00.000Z';
 export function seedDemoData(): StoreState {
   return {
     users: [
-      { id: 'demo-user-ada', mode: 'DEMO', name: 'Ada Nwosu', email: 'ada@demo.memezo.ng', phone: '+2348010001001', status: 'ACTIVE', role: 'SUPER_ADMIN', kycStatus: 'APPROVED', createdAt: '2026-06-01T09:00:00.000Z', lastActiveAt: now, notes: [] },
-      { id: 'demo-user-tobi', mode: 'DEMO', name: 'Tobi Adeyemi', email: 'tobi@demo.memezo.ng', phone: '+2348010001002', status: 'ACTIVE', role: 'USER', kycStatus: 'PENDING_REVIEW', createdAt: '2026-06-03T11:00:00.000Z', lastActiveAt: '2026-06-05T17:40:00.000Z', notes: ['Requested clearer address document.'] },
-      { id: 'demo-user-zainab', mode: 'DEMO', name: 'Zainab Musa', email: 'zainab@demo.memezo.ng', phone: '+2348010001003', status: 'ACTIVE', role: 'USER', kycStatus: 'NOT_STARTED', createdAt: '2026-06-04T14:00:00.000Z', lastActiveAt: '2026-06-05T16:10:00.000Z', notes: [] },
+      { id: 'demo-user-ada', mode: 'DEMO', handle: '@ada', name: 'Ada Nwosu', email: 'ada@demo.memezo.ng', phone: '+2348010001001', status: 'ACTIVE', role: 'SUPER_ADMIN', kycStatus: 'APPROVED', createdAt: '2026-06-01T09:00:00.000Z', lastActiveAt: now, notes: [] },
+      { id: 'demo-user-tobi', mode: 'DEMO', handle: '@tobi', name: 'Tobi Adeyemi', email: 'tobi@demo.memezo.ng', phone: '+2348010001002', status: 'ACTIVE', role: 'USER', kycStatus: 'APPROVED', createdAt: '2026-06-03T11:00:00.000Z', lastActiveAt: '2026-06-05T17:40:00.000Z', notes: [] },
+      { id: 'demo-user-zainab', mode: 'DEMO', handle: '@zainab', name: 'Zainab Musa', email: 'zainab@demo.memezo.ng', phone: '+2348010001003', status: 'ACTIVE', role: 'USER', kycStatus: 'APPROVED', createdAt: '2026-06-04T14:00:00.000Z', lastActiveAt: '2026-06-05T16:10:00.000Z', notes: [] },
       { id: 'live-user-empty', mode: 'LIVE', name: 'Live Preview User', email: 'live-preview@memezo.ng', phone: '+2348010001999', status: 'ACTIVE', role: 'USER', kycStatus: 'NOT_STARTED', createdAt: '2026-06-05T12:00:00.000Z', lastActiveAt: now, notes: [] }
     ],
     wallets: [
       ...['NGN', 'USDT', 'USDC', 'SOL', 'ETH', 'BTC'].map((asset) => ({ id: `demo-user-ada-${asset.toLowerCase()}`, userId: 'demo-user-ada', mode: 'DEMO' as const, asset, label: `${asset} Wallet` })),
+      { id: 'demo-user-tobi-ngn', userId: 'demo-user-tobi', mode: 'DEMO', asset: 'NGN', label: 'NGN Wallet' },
+      { id: 'demo-user-zainab-ngn', userId: 'demo-user-zainab', mode: 'DEMO', asset: 'NGN', label: 'NGN Wallet' },
       ...['NGN', 'USDT', 'USDC', 'SOL', 'ETH', 'BTC'].map((asset) => ({ id: `live-user-empty-${asset.toLowerCase()}`, userId: 'live-user-empty', mode: 'LIVE' as const, asset, label: `${asset} Wallet` })),
-      { id: 'platform-demo-funding-ngn', userId: 'platform-demo', mode: 'DEMO', asset: 'NGN', label: 'Demo Funding Reserve' }
+      ...['NGN', 'USDT', 'USDC', 'SOL', 'ETH', 'BTC'].map((asset) => ({ id: `platform-demo-funding-${asset.toLowerCase()}`, userId: 'platform-demo', mode: 'DEMO' as const, asset, label: `Demo ${asset} Reserve` }))
     ],
-    ledgerTransactions: [{
-      id: 'ledger-demo-opening-ada',
-      mode: 'DEMO',
-      idempotencyKey: 'seed-credit-demo-user-ada',
-      description: 'Demo opening balance',
-      createdAt: '2026-06-01T09:01:00.000Z',
-      entries: [
-        { accountId: 'platform-demo-funding-ngn', side: 'DEBIT', amountMinor: '50000000' },
-        { accountId: 'demo-user-ada-ngn', side: 'CREDIT', amountMinor: '50000000' }
-      ]
-    }],
+    ledgerTransactions: [
+      {
+        id: 'ledger-demo-opening-ada',
+        mode: 'DEMO',
+        idempotencyKey: 'seed-credit-demo-user-ada',
+        description: 'Demo opening balance',
+        createdAt: '2026-06-01T09:01:00.000Z',
+        entries: [
+          { accountId: 'platform-demo-funding-ngn', side: 'DEBIT', amountMinor: '50000000' },
+          { accountId: 'demo-user-ada-ngn', side: 'CREDIT', amountMinor: '50000000' }
+        ]
+      },
+      ...[
+        ['USDT', '86420000'],
+        ['USDC', '12800000'],
+        ['BTC', '720'],
+        ['ETH', '31000'],
+        ['SOL', '128000']
+      ].map(([asset, amountMinor]) => ({
+        id: `ledger-demo-opening-ada-${asset.toLowerCase()}`,
+        mode: 'DEMO' as const,
+        idempotencyKey: `seed-credit-demo-user-ada-${asset.toLowerCase()}`,
+        description: `Demo ${asset} opening balance`,
+        createdAt: '2026-06-01T09:01:00.000Z',
+        entries: [
+          { accountId: `platform-demo-funding-${asset.toLowerCase()}`, side: 'DEBIT' as const, amountMinor },
+          { accountId: `demo-user-ada-${asset.toLowerCase()}`, side: 'CREDIT' as const, amountMinor }
+        ]
+      }))
+    ],
     kycCases: [{ id: 'kyc-demo-tobi', userId: 'demo-user-tobi', mode: 'DEMO', status: 'PENDING_REVIEW', provider: 'dojah', submittedAt: '2026-06-05T13:10:00.000Z' }],
     providers: [],
     auditEvents: [],
@@ -66,6 +87,7 @@ export function seedDemoData(): StoreState {
       createdAt: '2026-06-01T09:00:00.000Z'
     }],
     aiPaymentDrafts: [],
+    internalTransfers: [],
     p2pOrders: [
       { id: 'p2p-demo-1', userId: 'demo-user-ada', mode: 'DEMO', exchange: 'Manual demo order', externalOrderId: 'BYB-3829104', sellerName: 'Chinedu O.', bankName: 'GTBank', accountNumber: '0123456789', accountName: 'Chinedu Okafor', amountMinor: '18500000', asset: 'USDT', assetQuantity: '116.40', riskFlags: [], status: 'PENDING', createdAt: '2026-06-05T17:55:00.000Z', updatedAt: '2026-06-05T17:55:00.000Z' },
       { id: 'p2p-demo-2', userId: 'demo-user-ada', mode: 'DEMO', exchange: 'Manual demo order', externalOrderId: 'BYB-3829077', sellerName: 'Mariam A.', bankName: 'Access Bank', accountNumber: '0234567890', accountName: 'Mariam Abdullahi', amountMinor: '4200000', asset: 'USDT', assetQuantity: '26.42', riskFlags: ['NEW_COUNTERPARTY'], status: 'REVIEW', createdAt: '2026-06-05T17:42:00.000Z', updatedAt: '2026-06-05T17:42:00.000Z' }
@@ -76,6 +98,19 @@ export function seedDemoData(): StoreState {
     whatsappWebhookEvents: [],
     whatsappCommandLogs: [],
     whatsappApprovalSessions: [],
+    whatsappAutomationSettings: [{
+      id: 'wa-settings-demo-ada',
+      userId: 'demo-user-ada',
+      mode: 'DEMO',
+      paymentsEnabled: true,
+      p2pAlertsEnabled: true,
+      p2pAutoPayPaused: false,
+      perTransactionLimitMinor: '10000000',
+      requireInAppAboveMinor: '10000000',
+      dailyLimitMinor: '25000000',
+      trustedRecipients: ['0123456789'],
+      updatedAt: now
+    }],
     whatsappTemplates: [
       { id: 'wa-template-security', mode: 'DEMO', name: 'security_alert', category: 'UTILITY', language: 'en', status: 'APPROVED', body: 'MemeZo security alert: {{1}}', createdAt: now },
       { id: 'wa-template-p2p', mode: 'DEMO', name: 'p2p_order_alert', category: 'UTILITY', language: 'en', status: 'APPROVED', body: 'New P2P order {{1}} requires attention.', createdAt: now }

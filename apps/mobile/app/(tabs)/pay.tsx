@@ -6,6 +6,7 @@ import { AppHeader, ModePill, ProviderNotice, SectionHeader, StatusPill } from '
 import { dark, depth } from '@/theme';
 
 const actions = [
+  { title: 'Send to MemeZo', body: 'Instant transfer by tag or phone', icon: 'send' as const, route: '/memezo-transfer', color: dark.cyan },
   { title: 'AI Pay', body: 'Type or scan payment details', icon: 'sparkles' as const, route: '/ai-pay', color: dark.green },
   { title: 'WhatsApp', body: 'Prepare payments from chat', icon: 'logo-whatsapp' as const, route: '/whatsapp', color: '#25D366' },
   { title: 'Bills', body: 'Airtime, data and utilities', icon: 'receipt' as const, route: '/bills', color: dark.yellow },
@@ -24,11 +25,11 @@ export default function PayScreen() {
       <Pressable onPress={() => router.push('/ai-pay')} style={{ minHeight: 50, marginTop: 8, borderRadius: 12, backgroundColor: dark.green, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}><Ionicons name="sparkles" color={dark.black} size={18} /><Text style={{ color: dark.black, fontWeight: '900' }}>Start a smart payment</Text></Pressable>
     </LinearGradient>
     <SectionHeader title="Pay and manage" />
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-      {actions.map((action) => <Pressable key={action.title} onPress={() => router.push(action.route as never)} style={({ pressed }) => ({ width: '48.5%', minHeight: 126, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: dark.border, backgroundColor: pressed ? dark.surfaceRaised : dark.surface })}>
-        <View style={{ width: 41, height: 41, borderRadius: 14, backgroundColor: `${action.color}18`, alignItems: 'center', justifyContent: 'center' }}><Ionicons name={action.icon} color={action.color} size={21} /></View>
-        <Text style={{ color: dark.text, fontSize: 14, fontWeight: '900', paddingTop: 13 }}>{action.title}</Text>
-        <Text numberOfLines={2} style={{ color: dark.muted, fontSize: 10, lineHeight: 15, paddingTop: 4 }}>{action.body}</Text>
+    <View style={{ backgroundColor: dark.surface, borderRadius: 14, paddingHorizontal: 14 }}>
+      {actions.map((action) => <Pressable key={action.title} onPress={() => router.push(action.route as never)} style={({ pressed }) => ({ minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: dark.border, opacity: pressed ? 0.7 : 1 })}>
+        <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: `${action.color}18`, alignItems: 'center', justifyContent: 'center' }}><Ionicons name={action.icon} color={action.color} size={21} /></View>
+        <View style={{ flex: 1 }}><Text style={{ color: dark.text, fontSize: 14, fontWeight: '900' }}>{action.title}</Text><Text numberOfLines={1} style={{ color: dark.muted, fontSize: 10, paddingTop: 3 }}>{action.body}</Text></View>
+        <Ionicons name="chevron-forward" color={dark.muted} size={18} />
       </Pressable>)}
     </View>
     <ProviderNotice title="Approval stays with you" body="MemeZo can prepare and risk-check payments. Money moves only after PIN, biometric approval, or a bounded trusted rule." />

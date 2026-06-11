@@ -13,6 +13,7 @@ export type KycStatus =
 export type User = {
   id: string;
   mode: Mode;
+  handle?: string;
   name: string;
   email: string;
   phone: string;
@@ -174,6 +175,22 @@ export type AiPaymentDraft = {
   updatedAt: string;
 };
 
+export type InternalTransfer = {
+  id: string;
+  mode: Mode;
+  senderId: string;
+  recipientId: string;
+  recipientName: string;
+  recipientHandle?: string;
+  amountMinor: string;
+  feeMinor: string;
+  narration: string;
+  status: 'COMPLETED' | 'FAILED' | 'REVERSED';
+  ledgerTransactionId: string;
+  receipt: string;
+  createdAt: string;
+};
+
 export type P2pOrder = {
   id: string;
   userId: string;
@@ -268,6 +285,20 @@ export type WhatsappApprovalSession = {
   updatedAt: string;
 };
 
+export type WhatsappAutomationSettings = {
+  id: string;
+  userId: string;
+  mode: Mode;
+  paymentsEnabled: boolean;
+  p2pAlertsEnabled: boolean;
+  p2pAutoPayPaused: boolean;
+  perTransactionLimitMinor: string;
+  requireInAppAboveMinor: string;
+  dailyLimitMinor: string;
+  trustedRecipients: string[];
+  updatedAt: string;
+};
+
 export type WhatsappTemplate = {
   id: string;
   mode: Mode;
@@ -316,6 +347,7 @@ export type StoreState = {
   moneyRequests: MoneyRequest[];
   virtualAccounts: VirtualAccount[];
   aiPaymentDrafts: AiPaymentDraft[];
+  internalTransfers: InternalTransfer[];
   p2pOrders: P2pOrder[];
   billPayments: BillPayment[];
   whatsappConnections: WhatsappConnection[];
@@ -323,6 +355,7 @@ export type StoreState = {
   whatsappWebhookEvents: WhatsappWebhookEvent[];
   whatsappCommandLogs: WhatsappCommandLog[];
   whatsappApprovalSessions: WhatsappApprovalSession[];
+  whatsappAutomationSettings: WhatsappAutomationSettings[];
   whatsappTemplates: WhatsappTemplate[];
   trades: Trade[];
   positions: Position[];

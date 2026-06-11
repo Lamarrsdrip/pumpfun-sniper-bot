@@ -3,6 +3,7 @@ import type {
   AiPaymentDraft,
   AuditEvent,
   BillPayment,
+  InternalTransfer,
   KycCase,
   LedgerTransaction,
   MoneyRequest,
@@ -17,6 +18,7 @@ import type {
   VirtualAccount,
   WalletAccount,
   WhatsappApprovalSession,
+  WhatsappAutomationSettings,
   WhatsappCommandLog,
   WhatsappConnection,
   WhatsappMessage,
@@ -39,7 +41,7 @@ export function createMemoryStore(initial: StoreState) {
         .filter((user) => !filter.mode || user.mode === filter.mode)
         .filter((user) => !filter.status || user.status === filter.status)
         .filter((user) => !filter.kycStatus || user.kycStatus === filter.kycStatus)
-        .filter((user) => !query || [user.id, user.name, user.email, user.phone].some((value) => value.toLowerCase().includes(query)))
+        .filter((user) => !query || [user.id, user.handle || '', user.name, user.email, user.phone].some((value) => value.toLowerCase().includes(query)))
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
     },
     getUser(id: string): User | undefined {
@@ -148,6 +150,18 @@ export function createMemoryStore(initial: StoreState) {
       else state.aiPaymentDrafts.push(clone(value));
       return clone(value);
     },
+    listInternalTransfers(filter: { mode?: Mode; userId?: string } = {}): InternalTransfer[] {
+      return clone(state.internalTransfers
+        .filter((item) => !filter.mode || item.mode === filter.mode)
+        .filter((item) => !filter.userId || item.senderId === filter.userId || item.recipientId === filter.userId)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
+    },
+    saveInternalTransfer(value: InternalTransfer): InternalTransfer {
+      const index = state.internalTransfers.findIndex((item) => item.id === value.id);
+      if (index >= 0) state.internalTransfers[index] = clone(value);
+      else state.internalTransfers.push(clone(value));
+      return clone(value);
+    },
     listP2pOrders(filter: { mode?: Mode; userId?: string } = {}): P2pOrder[] {
       return clone(state.p2pOrders
         .filter((item) => !filter.mode || item.mode === filter.mode)
@@ -229,6 +243,15 @@ export function createMemoryStore(initial: StoreState) {
       const index = state.whatsappApprovalSessions.findIndex((item) => item.id === value.id);
       if (index >= 0) state.whatsappApprovalSessions[index] = clone(value);
       else state.whatsappApprovalSessions.push(clone(value));
+      return clone(value);
+    },
+    getWhatsappAutomationSettings(userId: string, mode: Mode): WhatsappAutomationSettings | undefined {
+      return clone(state.whatsappAutomationSettings.find((item) => item.userId === userId && item.mode === mode));
+    },
+    saveWhatsappAutomationSettings(value: WhatsappAutomationSettings): WhatsappAutomationSettings {
+      const index = state.whatsappAutomationSettings.findIndex((item) => item.userId === value.userId && item.mode === value.mode);
+      if (index >= 0) state.whatsappAutomationSettings[index] = clone(value);
+      else state.whatsappAutomationSettings.push(clone(value));
       return clone(value);
     },
     listWhatsappTemplates(mode?: Mode): WhatsappTemplate[] {

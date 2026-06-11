@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api, ApiError } from '@/api';
 import { Button, ModePill, Page, ProviderNotice, SectionHeader, StatusPill, formatNaira } from '@/components';
@@ -36,7 +37,7 @@ export default function P2pScreen() {
       </View>)}
     </>}
     {message ? <Text selectable style={{ color: dark.yellow, lineHeight: 18 }}>{message}</Text> : null}
-    <Pressable onPress={() => {}} style={{ flexDirection: 'row', gap: 11, padding: 14, borderRadius: 13, backgroundColor: '#123528', borderWidth: 1, borderColor: '#2D654D' }}><Ionicons name="logo-whatsapp" color="#25D366" size={23} /><View style={{ flex: 1 }}><Text style={{ color: dark.text, fontWeight: '900' }}>Merchant alerts on WhatsApp</Text><Text style={{ color: dark.muted, fontSize: 10, paddingTop: 3 }}>Order, failure, low balance and receipt notifications.</Text></View></Pressable>
+    <Pressable onPress={() => router.push('/whatsapp')} style={{ flexDirection: 'row', gap: 11, padding: 14, borderRadius: 13, backgroundColor: '#123528' }}><Ionicons name="logo-whatsapp" color="#25D366" size={23} /><View style={{ flex: 1 }}><Text style={{ color: dark.text, fontWeight: '900' }}>Merchant alerts on WhatsApp</Text><Text style={{ color: dark.muted, fontSize: 10, paddingTop: 3 }}>Order, failure, low balance and receipt notifications.</Text></View><Ionicons name="chevron-forward" color={dark.muted} size={18} /></Pressable>
     <ProviderNotice body="Exchange sync and automatic live payouts remain unavailable until authenticated provider adapters and webhook reconciliation are enabled." />
   </Page>;
 }
