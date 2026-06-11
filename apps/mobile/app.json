@@ -1,22 +1,22 @@
 {
   "expo": {
-    "name": "NairaMeme",
-    "slug": "nairameme",
-    "scheme": "nairameme",
+    "name": "MemeZo",
+    "slug": "memezo",
+    "scheme": "memezo",
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "ng.nairameme.app",
+      "bundleIdentifier": "ng.memezo.app",
       "infoPlist": {
-        "NSFaceIDUsageDescription": "Use Face ID to protect your NairaMeme account and approve sensitive actions."
+        "NSFaceIDUsageDescription": "Use Face ID to protect your MemeZo account and approve sensitive actions."
       }
     },
     "android": {
-      "package": "ng.nairameme.app",
+      "package": "ng.memezo.app",
       "adaptiveIcon": {
-        "backgroundColor": "#06110D"
+        "backgroundColor": "#07130F"
       }
     },
     "plugins": [
@@ -25,22 +25,24 @@
       [
         "expo-notifications",
         {
-          "color": "#16C784"
+          "color": "#19D38A"
         }
       ],
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#06110D",
+          "backgroundColor": "#07130F",
           "resizeMode": "contain"
         }
       ],
-      "expo-font",
-      "expo-status-bar"
+      "expo-font"
     ],
+    "experiments": {
+      "reactCompiler": true
+    },
     "extra": {
       "router": {},
-      "apiUrl": "http://192.168.100.17:8790"
+      "apiUrl": "http://127.0.0.1:8790"
     }
   }
 }

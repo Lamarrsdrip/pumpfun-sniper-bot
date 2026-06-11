@@ -1,6 +1,6 @@
-# NairaMeme Platform
+# MemeZo Platform
 
-NairaMeme is a Naira-first native iOS/Android meme-market platform. It combines market intelligence, manual trading, optional Auto Sniper automation, social discovery, communities, risk-adjusted leaderboards, copy-trading foundations, and an admin control plane.
+MemeZo is a Naira-first native iOS/Android meme-market platform. It combines market intelligence, manual trading, optional Auto Sniper automation, social discovery, communities, risk-adjusted leaderboards, copy-trading foundations, and an admin control plane.
 
 The original Pump.fun scanner remains in `src/` as a migration source and internal paper-testing terminal. It is not the customer mobile application.
 
@@ -142,7 +142,7 @@ Provider secrets belong in a secret manager or backend environment. They are nev
 
 For local and single-server staging, set `FIELD_ENCRYPTION_KEY` to a long random value. The admin then stores provider credentials in the AES-256-GCM encrypted file configured by `PROVIDER_SECRETS_PATH` (default `data/provider-secrets.enc`, ignored by Git). Production deployments should mount that file on encrypted persistent storage or replace the vault with a managed KMS/secret manager.
 
-The admin operations center now includes working user/KYC decisions, deposit and withdrawal decisions, token moderation, per-user bot controls, copy-trader eligibility, funded bounty creation, campaign drafts/approval, fees and limits, incidents, provider credential forms/tests, audit history, and launch readiness. Provider status remains `DEGRADED` after credential validation until its network adapter has completed a real upstream health check.
+The MemeZo admin operations center includes working user/KYC decisions, virtual-account visibility, deposit and withdrawal decisions, AI payment and P2P records, bill-payment records, token moderation, per-user bot controls, copy-trader eligibility, campaign drafts/approval, fees and limits, incidents, provider credential forms/tests, audit history, and launch readiness. Provider status remains `DEGRADED` after credential validation until its network adapter completes a real upstream health check.
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before implementing provider adapters or enabling money movement.
 Read [docs/AUDIT.md](docs/AUDIT.md) for verified fixes and remaining release blockers.
@@ -406,7 +406,7 @@ MODE=paper DATA_MODE=hybrid PORT=8787 npm start
 
 For production VPS use, run behind a process manager and HTTPS reverse proxy. Keep private keys out of this app. Real live execution must go through a separate audited broker service configured with `LIVE_TRADE_API_URL` and `LIVE_TRADE_API_KEY`.
 
-## NairaMeme Launch Configuration
+## MemeZo Launch Configuration
 
 The admin portal now reads provider-specific field definitions from the API. Open **Providers & API Keys**, choose a provider, select **Configure**, enter its fields, save, and run **Test**. Secrets are accepted only by the backend configuration endpoint and must be backed by an audited secret manager in production.
 

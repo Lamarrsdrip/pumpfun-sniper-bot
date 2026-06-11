@@ -11,9 +11,9 @@ export default function Splash() {
   }, []);
   return (
     <LinearGradient colors={['#06110D', '#0B2A1C']} style={styles.root}>
-      <View style={styles.mark}><Text style={styles.markText}>NM</Text></View>
-      <Text style={styles.name}>NairaMeme</Text>
-      <Text style={styles.tag}>Nigeria's meme market intelligence network</Text>
+      <View style={styles.mark}><Text style={styles.markText}>MZ</Text></View>
+      <Text style={styles.name}>MemeZo</Text>
+      <Text style={styles.tag}>Money. Crypto. Automation.</Text>
     </LinearGradient>
   );
 }

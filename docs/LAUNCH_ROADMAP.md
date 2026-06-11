@@ -1,9 +1,9 @@
-# NairaMeme Launch Roadmap
+# MemeZo Launch Roadmap
 
 ## Completed Foundation
 
 - Native Expo iOS/Android application structure.
-- Naira-first wallet, deposits, withdrawals, discovery, token intelligence, trading review, portfolio, Earn, Network and Auto Sniper screens.
+- Naira-first MemeZo wallet, deposits, withdrawals, discovery, token intelligence, trading review, AI Pay, P2P Manager, bills, cards, Network and Auto Sniper screens.
 - Working Demo API with mode isolation, sessions, double-entry ledger, fees, trade positions, transaction history and audit records.
 - Operational admin workflows for users, KYC, deposits, withdrawals, trades, tokens, providers and audit events.
 - Rules-first Runner explanations and a cost-limited Emergent configuration.
@@ -72,7 +72,7 @@ the browser or mobile app.
 
 ## Legal And Compliance
 
-- Nigerian legal advice on custody, exchange, automated trading, promotions, bounties and copy trading.
+- Nigerian legal advice on custody, exchange, automated trading, AI-assisted payments, merchant payouts and copy trading.
 - KYC/AML, sanctions, PEP, transaction monitoring and suspicious-activity procedures.
 - Privacy policy, terms, risk disclosure, complaints, refunds/reversals and data-retention policy.
 - Banking/payment-provider approvals and a documented source-of-funds process.

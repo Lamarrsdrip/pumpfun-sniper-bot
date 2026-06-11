@@ -25,6 +25,14 @@ test('authenticated role controls admin visibility', async () => {
   await app.close();
 });
 
+test('production user routes reject mode-header impersonation without a session', async () => {
+  const app = await buildApp({ environment: 'production', adminApiToken: 'admin-test-token' });
+  const response = await app.inject({ method: 'GET', url: '/v1/mobile/home', headers: { 'x-app-mode': 'LIVE' } });
+  assert.equal(response.statusCode, 401);
+  assert.equal(response.json().code, 'UNAUTHORIZED');
+  await app.close();
+});
+
 test('demo deposit approval credits exactly once and produces an audit record', async () => {
   const app = await buildApp();
   const created = await app.inject({ method: 'POST', url: '/v1/deposits', headers: { 'x-app-mode': 'DEMO' }, payload: { amountNgn: 10000 } });
@@ -33,9 +41,60 @@ test('demo deposit approval credits exactly once and produces an audit record', 
   await app.inject({ method: 'POST', url: `/v1/admin/money-requests/${id}/decision`, payload: decision });
   await app.inject({ method: 'POST', url: `/v1/admin/money-requests/${id}/decision`, payload: decision });
   const home = await app.inject({ method: 'GET', url: '/v1/mobile/home' });
-  assert.equal(home.json().wallet.availableNgn, '510000.00');
+  assert.equal(home.json().wallet.availableNgn, '509950.00');
   const audit = await app.inject({ method: 'GET', url: '/v1/admin/audit' });
   assert.ok(audit.json().events.some((event: { targetId: string }) => event.targetId === id));
+  await app.close();
+});
+
+test('AI Pay prepares a review and only debits after PIN approval', async () => {
+  const app = await buildApp();
+  const prepared = await app.inject({
+    method: 'POST',
+    url: '/v1/ai-pay/prepare',
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: { instruction: 'Send ₦50,000 to 0123456789 Access Bank for inventory' }
+  });
+  assert.equal(prepared.statusCode, 201);
+  assert.equal(prepared.json().payment.status, 'REVIEW');
+  assert.equal(prepared.json().payment.amountMinor, '5000000');
+  const approved = await app.inject({
+    method: 'POST',
+    url: `/v1/ai-pay/${prepared.json().payment.id}/approve`,
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: { pin: '1234', idempotencyKey: 'ai-pay-workflow-0001', confirmDuplicate: false }
+  });
+  assert.equal(approved.statusCode, 200);
+  assert.equal(approved.json().payment.status, 'PAID');
+  assert.equal(approved.json().balanceNgn, '450000.00');
+  await app.close();
+});
+
+test('P2P payout enforces risk review and pays a clean demo order', async () => {
+  const app = await buildApp();
+  const orders = await app.inject({ method: 'GET', url: '/v1/p2p/orders', headers: { 'x-app-mode': 'DEMO' } });
+  const clean = orders.json().orders.find((item: { riskFlags: string[] }) => item.riskFlags.length === 0);
+  const risky = orders.json().orders.find((item: { riskFlags: string[] }) => item.riskFlags.length > 0);
+  const blocked = await app.inject({ method: 'POST', url: `/v1/p2p/orders/${risky.id}/approve`, headers: { 'x-app-mode': 'DEMO' }, payload: { pin: '1234', idempotencyKey: 'p2p-risky-order-01' } });
+  assert.equal(blocked.statusCode, 409);
+  const paid = await app.inject({ method: 'POST', url: `/v1/p2p/orders/${clean.id}/approve`, headers: { 'x-app-mode': 'DEMO' }, payload: { pin: '1234', idempotencyKey: 'p2p-clean-order-01' } });
+  assert.equal(paid.statusCode, 200);
+  assert.equal(paid.json().order.status, 'PAID');
+  await app.close();
+});
+
+test('bill payment posts through the demo ledger with a receipt', async () => {
+  const app = await buildApp();
+  const result = await app.inject({
+    method: 'POST',
+    url: '/v1/bills/pay',
+    headers: { 'x-app-mode': 'DEMO' },
+    payload: { service: 'AIRTIME', customerReference: '08030000000', amountNgn: 2000, pin: '1234', idempotencyKey: 'bill-airtime-0001' }
+  });
+  assert.equal(result.statusCode, 201);
+  assert.equal(result.json().payment.status, 'PAID');
+  assert.match(result.json().receipt, /^MZ-/);
+  assert.equal(result.json().balanceNgn, '497950.00');
   await app.close();
 });
 

@@ -17,7 +17,8 @@ test('seeded demo ecosystem is realistic, deterministic, and newest first', () =
   const tokens = store.listTokens('DEMO');
   assert.deepEqual(tokens.map((token) => token.name), ['Naija Frog', 'Sabi Cat', 'Jollof Wars']);
   assert.equal(tokens.every((token) => token.mint.length > 20 && token.source === 'Demo market simulator'), true);
-  assert.equal(store.listBounties('DEMO').length, 2);
+  assert.equal(store.listAiPaymentDrafts({ mode: 'DEMO' }).length, 0);
+  assert.equal(store.listP2pOrders({ mode: 'DEMO' }).length, 2);
   assert.equal(store.listAlerts('DEMO')[0]?.title, 'Runner score jumped to 91');
 });
 

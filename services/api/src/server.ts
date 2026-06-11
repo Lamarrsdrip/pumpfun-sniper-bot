@@ -15,7 +15,7 @@ import {
   type ProviderCredentials,
   type ProviderVault
 } from './domain/provider-vault.js';
-import type { AuditEvent, Mode, MoneyRequest, ProviderConfig, Trade, User } from './domain/types.js';
+import type { AiPaymentDraft, AuditEvent, BillPayment, Mode, MoneyRequest, P2pOrder, ProviderConfig, Trade, User } from './domain/types.js';
 
 type AppOptions = {
   environment?: string;
@@ -50,9 +50,11 @@ type IncidentRecord = {
 };
 
 type OperationsSettings = {
+  depositFeePercent: number;
   swapFeePercent: number;
   botFeePercent: number;
   withdrawalFeePercent: number;
+  cryptoWithdrawalMarginPercent: number;
   minimumDepositNgn: number;
   maximumWithdrawalNgn: number;
   dailyUserLimitNgn: number;
@@ -76,7 +78,18 @@ export async function buildApp(options: AppOptions = {}) {
       if (base) store.saveProvider({ ...base, configured: true, status: 'DEGRADED' });
     }
   }
-  const botSettings = new Map<string, { active: boolean; riskLevel: string; maxTradeNgn: number; takeProfitPercent: number; stopLossPercent: number; dailyLossLimitPercent: number }>();
+  const botSettings = new Map<string, {
+    active: boolean;
+    automationMode: 'SIMULATION' | 'MANUAL' | 'SEMI_AUTO' | 'FULL_AUTO';
+    riskLevel: string;
+    maxTradeNgn: number;
+    takeProfitPercent: number;
+    stopLossPercent: number;
+    dailyLossLimitPercent: number;
+    maxOpenTrades: number;
+    maxSlippagePercent: number;
+    minimumLiquidityNgn: number;
+  }>();
   const campaigns = new Map<string, CampaignRecord>();
   const incidents = new Map<string, IncidentRecord>();
   const operationsSettings = new Map<Mode, OperationsSettings>([
@@ -130,7 +143,7 @@ export async function buildApp(options: AppOptions = {}) {
     return { ...issueSession(store, user.id), user };
   });
   app.get('/v1/me', async (request) => {
-    const context = requestContext(request, store);
+    const context = requestContext(request, store, environment);
     return { user: context.user, mode: context.mode, isAdmin: context.user.role !== 'USER' };
   });
   app.post('/v1/auth/start', async (request, reply) => {
@@ -143,7 +156,7 @@ export async function buildApp(options: AppOptions = {}) {
   });
 
   app.get('/v1/mobile/home', async (request) => {
-    const context = requestContext(request, store);
+    const context = requestContext(request, store, environment);
     const tokens = store.listTokens(context.mode);
     const walletMinor = userWalletBalanceMinor(store, context.user.id, context.mode);
     const positions = store.listPositions({ userId: context.user.id, mode: context.mode });
@@ -171,22 +184,26 @@ export async function buildApp(options: AppOptions = {}) {
         explanation: `${tokens[0].holders.toLocaleString()} holders, ${tokens[0].change24h.toFixed(1)}% momentum and ${tokens[0].riskScore}/100 risk.`
       } : null,
       alerts: store.listAlerts(context.mode),
-      bounties: store.listBounties(context.mode),
+      services: [
+        { key: 'AI_PAY', title: 'AI Pay', subtitle: 'Prepare a verified payment from text or an image.' },
+        { key: 'P2P', title: 'P2P Manager', subtitle: 'Review merchant orders and reconcile payouts.' },
+        { key: 'BILLS', title: 'Bills', subtitle: 'Airtime, data, electricity and subscriptions.' }
+      ],
       providerState: marketState(context.mode)
     };
   });
   app.get('/v1/tokens', async (request) => {
-    const context = requestContext(request, store);
+    const context = requestContext(request, store, environment);
     return { mode: context.mode, demoNotice: context.mode === 'DEMO' ? 'Demo Mode - Not Real Money' : undefined, tokens: store.listTokens(context.mode) };
   });
   app.get('/v1/tokens/:mint', async (request, reply) => {
-    const context = requestContext(request, store);
+    const context = requestContext(request, store, environment);
     const mint = z.string().parse((request.params as { mint: string }).mint);
     const token = store.listTokens(context.mode).find((item) => item.mint === mint);
     return token ? { token, explanation: tokenExplanation(token), ai: await explainWithBudget(token) } : reply.status(404).send({ code: 'TOKEN_NOT_FOUND', message: 'Token not found in this mode.' });
   });
   app.get('/v1/portfolio', async (request) => {
-    const context = requestContext(request, store);
+    const context = requestContext(request, store, environment);
     const positions = store.listPositions({ mode: context.mode, userId: context.user.id }).map((position) => ({
       ...position,
       token: store.listTokens(context.mode).find((item) => item.id === position.tokenId)
@@ -199,24 +216,32 @@ export async function buildApp(options: AppOptions = {}) {
       transactions: store.listMoneyRequests({ mode: context.mode, userId: context.user.id })
     };
   });
-  app.get('/v1/bounties', async (request) => {
-    const context = requestContext(request, store);
-    return { bounties: store.listBounties(context.mode) };
-  });
+  app.get('/v1/bounties', async (_, reply) => reply.status(410).send({ code: 'FEATURE_RETIRED', message: 'Bounties were replaced by MemeZo AI Payments.' }));
   app.get('/v1/bot/settings', async (request) => {
-    const context = requestContext(request, store);
-    return { mode: context.mode, settings: botSettings.get(context.user.id) || { active: false, riskLevel: 'BALANCED', maxTradeNgn: 10000, takeProfitPercent: 30, stopLossPercent: 12, dailyLossLimitPercent: 5 } };
+    const context = requestContext(request, store, environment);
+    return { mode: context.mode, settings: botSettings.get(context.user.id) || defaultBotSettings() };
   });
   app.put('/v1/bot/settings', async (request, reply) => {
-    const context = requestContext(request, store);
-    const body = z.object({ active: z.boolean(), riskLevel: z.enum(['SAFE', 'BALANCED', 'SNIPER']), maxTradeNgn: z.number().min(500).max(1_000_000), takeProfitPercent: z.number().min(5).max(500), stopLossPercent: z.number().min(2).max(30), dailyLossLimitPercent: z.number().min(1).max(20) }).parse(request.body);
-    if (context.mode === 'LIVE' && body.active) return reply.status(409).send({ code: 'LIVE_BOT_DISABLED', message: 'Live Auto Sniper requires an audited execution adapter, verified KYC and custody controls.' });
+    const context = requestContext(request, store, environment);
+    const body = z.object({
+      active: z.boolean(),
+      automationMode: z.enum(['SIMULATION', 'MANUAL', 'SEMI_AUTO', 'FULL_AUTO']),
+      riskLevel: z.enum(['SAFE', 'BALANCED', 'SNIPER']),
+      maxTradeNgn: z.number().min(500).max(10_000_000),
+      takeProfitPercent: z.number().min(5).max(500),
+      stopLossPercent: z.number().min(2).max(30),
+      dailyLossLimitPercent: z.number().min(1).max(20),
+      maxOpenTrades: z.number().int().min(1).max(20),
+      maxSlippagePercent: z.number().min(0.1).max(20),
+      minimumLiquidityNgn: z.number().min(100_000).max(1_000_000_000)
+    }).parse(request.body);
+    if (context.mode === 'LIVE' && body.active && body.automationMode !== 'SIMULATION') return reply.status(409).send({ code: 'LIVE_BOT_DISABLED', message: 'Live Auto Sniper execution requires an audited custody and trading adapter. Simulation remains available.' });
     botSettings.set(context.user.id, body);
     return { mode: context.mode, settings: body, message: body.active ? 'Demo Auto Sniper monitoring started. Trades still obey backend limits.' : 'Auto Sniper stopped.' };
   });
 
   app.post('/v1/kyc/session', async (request, reply) => {
-    const context = optionalContext(request, store);
+    const context = optionalContext(request, store, environment);
     if (context?.mode === 'DEMO') {
       const current = store.listKycCases().find((item) => item.userId === context.user.id);
       return { mode: 'DEMO', status: current?.status || context.user.kycStatus, message: 'Demo KYC journey is available without submitting real identity documents.' };
@@ -224,18 +249,24 @@ export async function buildApp(options: AppOptions = {}) {
     return providerRequired(reply, 'kyc', 'KYC provider is not configured.');
   });
   app.post('/v1/deposits', async (request, reply) => {
-    const context = requestContext(request, store);
+    const context = requestContext(request, store, environment);
     const body = z.object({ amountNgn: money }).parse(request.body);
     if (context.mode === 'LIVE') return providerRequired(reply, 'payments', 'Naira deposit provider is not configured.');
-    const record = createMoneyRequest(context.user, 'DEPOSIT', body.amountNgn, 'Demo Bank Rail');
+    const settings = operationsSettings.get(context.mode)!;
+    const record = {
+      ...createMoneyRequest(context.user, 'DEPOSIT', body.amountNgn, 'Demo Bank Rail'),
+      feeMinor: toMinor(body.amountNgn * settings.depositFeePercent / 100).toString()
+    };
     store.saveMoneyRequest(record);
-    return reply.status(201).send({ request: record, instructions: { bank: 'NairaMeme Demo Bank', accountName: 'NairaMeme / Ada Nwosu', accountNumber: '0001234567', reference: record.reference } });
+    const account = store.listVirtualAccounts({ userId: context.user.id, mode: context.mode })[0];
+    return reply.status(201).send({ request: record, instructions: account, feeNgn: fromMinor(BigInt(record.feeMinor)), netCreditNgn: fromMinor(BigInt(record.amountMinor) - BigInt(record.feeMinor)) });
   });
   app.post('/v1/withdrawals', async (request, reply) => {
-    const context = requestContext(request, store);
+    const context = requestContext(request, store, environment);
     const body = z.object({ amountNgn: money, bankName: z.string().min(2), accountNumber: z.string().regex(/^\d{10}$/), accountName: z.string().min(2) }).parse(request.body);
     if (context.mode === 'LIVE') return providerRequired(reply, 'payments', 'Naira withdrawal provider is not configured.');
-    const feeMinor = toMinor(Math.max(50, body.amountNgn * 0.005));
+    const settings = operationsSettings.get(context.mode)!;
+    const feeMinor = toMinor(body.amountNgn * settings.withdrawalFeePercent / 100);
     const amountMinor = toMinor(body.amountNgn);
     const wallet = requiredWallet(store, context.user.id, context.mode);
     ensureSufficientBalance(store, wallet.id, amountMinor + feeMinor);
@@ -243,8 +274,152 @@ export async function buildApp(options: AppOptions = {}) {
     store.saveMoneyRequest(record);
     return reply.status(201).send({ request: record });
   });
+  app.get('/v1/virtual-account', async (request, reply) => {
+    const context = requestContext(request, store, environment);
+    const account = store.listVirtualAccounts({ userId: context.user.id, mode: context.mode })[0];
+    if (account) return { account };
+    if (context.mode === 'LIVE') return providerRequired(reply, 'payments', 'A virtual-account provider is not configured.');
+    const created = store.saveVirtualAccount({
+      id: `va_${randomUUID()}`,
+      userId: context.user.id,
+      mode: context.mode,
+      provider: 'Demo payment rail',
+      bankName: 'MemeZo Demo Bank',
+      accountName: `MemeZo / ${context.user.name}`,
+      accountNumber: String(Math.floor(1_000_000_000 + Math.random() * 8_999_999_999)),
+      reference: `MZ-${context.user.id.slice(-4).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`,
+      status: 'ACTIVE',
+      createdAt: new Date().toISOString()
+    });
+    return reply.status(201).send({ account: created });
+  });
+  app.get('/v1/ai-payments', async (request) => {
+    const context = requestContext(request, store, environment);
+    return { payments: store.listAiPaymentDrafts({ userId: context.user.id, mode: context.mode }) };
+  });
+  app.post('/v1/ai-pay/prepare', async (request, reply) => {
+    const context = requestContext(request, store, environment);
+    const body = z.object({
+      instruction: z.string().trim().min(8).max(2000),
+      source: z.enum(['TEXT', 'IMAGE']).default('TEXT'),
+      bankName: z.string().trim().min(2).max(100).optional(),
+      accountNumber: z.string().regex(/^\d{10}$/).optional(),
+      accountName: z.string().trim().min(2).max(120).optional(),
+      amountNgn: money.optional(),
+      narration: z.string().trim().max(120).optional()
+    }).parse(request.body);
+    if (body.source === 'IMAGE' && context.mode === 'LIVE' && !providerFamilyReady(store, 'ai')) {
+      return reply.status(503).send({ code: 'OCR_PROVIDER_NOT_CONNECTED', message: 'AI image extraction is not connected. Enter the payment details manually.' });
+    }
+    const parsed = parsePaymentInstruction(body.instruction);
+    const amountNgn = body.amountNgn ?? parsed.amountNgn;
+    const accountNumber = body.accountNumber ?? parsed.accountNumber;
+    if (!amountNgn || amountNgn <= 0 || amountNgn > 100_000_000 || !accountNumber) {
+      return reply.status(422).send({ code: 'PAYMENT_DETAILS_INCOMPLETE', message: 'Confirm a valid amount and 10-digit account number before review.' });
+    }
+    const recent = store.listAiPaymentDrafts({ userId: context.user.id, mode: context.mode }).find((item) =>
+      item.accountNumber === accountNumber
+      && item.amountMinor === toMinor(amountNgn).toString()
+      && Date.now() - Date.parse(item.createdAt) < 10 * 60_000
+    );
+    const riskFlags = [
+      ...(amountNgn >= 1_000_000 ? ['LARGE_AMOUNT_REVIEW'] : []),
+      ...(recent ? ['POSSIBLE_DUPLICATE'] : [])
+    ];
+    const now = new Date().toISOString();
+    const draft: AiPaymentDraft = {
+      id: `aipay_${randomUUID()}`,
+      userId: context.user.id,
+      mode: context.mode,
+      source: body.source,
+      instruction: body.instruction,
+      bankName: body.bankName || parsed.bankName || 'Bank confirmation required',
+      accountNumber,
+      accountName: body.accountName || 'Account lookup required',
+      amountMinor: toMinor(amountNgn).toString(),
+      narration: body.narration || parsed.narration || 'MemeZo payment',
+      riskFlags,
+      duplicateOf: recent?.id,
+      status: 'REVIEW',
+      createdAt: now,
+      updatedAt: now
+    };
+    store.saveAiPaymentDraft(draft);
+    return reply.status(201).send({ payment: draft, reviewRequired: true, message: 'Payment prepared. Review the recipient, amount and risk checks before approval.' });
+  });
+  app.post('/v1/ai-pay/:id/approve', async (request, reply) => {
+    const context = requestContext(request, store, environment);
+    const draft = store.getAiPaymentDraft((request.params as { id: string }).id);
+    if (!draft || draft.userId !== context.user.id || draft.mode !== context.mode) return reply.status(404).send({ code: 'PAYMENT_NOT_FOUND', message: 'Payment draft not found.' });
+    const body = z.object({ pin: z.string().regex(/^\d{4}$/), idempotencyKey: z.string().min(8).max(120), confirmDuplicate: z.boolean().default(false) }).parse(request.body);
+    if (context.mode === 'DEMO' && body.pin !== '1234') return reply.status(401).send({ code: 'INVALID_DEMO_PIN', message: 'The demo transaction PIN is 1234.' });
+    if (draft.riskFlags.includes('POSSIBLE_DUPLICATE') && !body.confirmDuplicate) return reply.status(409).send({ code: 'DUPLICATE_CONFIRMATION_REQUIRED', message: 'This resembles a recent payment. Confirm the duplicate warning before continuing.' });
+    if (context.mode === 'LIVE') return providerRequired(reply, 'payments', 'Bank transfer execution is not connected.');
+    const wallet = requiredWallet(store, context.user.id, context.mode);
+    const platform = requiredPlatformWallet(store, context.mode);
+    ensureSufficientBalance(store, wallet.id, BigInt(draft.amountMinor));
+    postLedgerTransaction(store, {
+      mode: context.mode,
+      idempotencyKey: body.idempotencyKey,
+      description: `AI Pay to ${draft.accountName}`,
+      entries: [
+        { accountId: wallet.id, side: 'DEBIT', amountMinor: draft.amountMinor },
+        { accountId: platform.id, side: 'CREDIT', amountMinor: draft.amountMinor }
+      ],
+      metadata: { paymentId: draft.id, accountNumber: draft.accountNumber }
+    });
+    const paid = store.saveAiPaymentDraft({ ...draft, status: 'PAID', updatedAt: new Date().toISOString() });
+    return { payment: paid, balanceNgn: fromMinor(userWalletBalanceMinor(store, context.user.id, context.mode)), receipt: `MZ-${paid.id.slice(-8).toUpperCase()}` };
+  });
+  app.get('/v1/p2p/orders', async (request) => {
+    const context = requestContext(request, store, environment);
+    return { orders: store.listP2pOrders({ userId: context.user.id, mode: context.mode }), sync: context.mode === 'DEMO' ? 'DEMO_MANUAL' : 'PROVIDER_REQUIRED' };
+  });
+  app.post('/v1/p2p/orders/:id/approve', async (request, reply) => {
+    const context = requestContext(request, store, environment);
+    const order = store.getP2pOrder((request.params as { id: string }).id);
+    if (!order || order.userId !== context.user.id || order.mode !== context.mode) return reply.status(404).send({ code: 'ORDER_NOT_FOUND', message: 'P2P order not found.' });
+    const body = z.object({ pin: z.string().regex(/^\d{4}$/).default('1234'), idempotencyKey: z.string().min(8).max(120) }).parse(request.body || {});
+    if (context.mode === 'DEMO' && body.pin !== '1234') return reply.status(401).send({ code: 'INVALID_DEMO_PIN', message: 'The demo transaction PIN is 1234.' });
+    if (order.riskFlags.length) return reply.status(409).send({ code: 'MANUAL_REVIEW_REQUIRED', message: `Resolve risk flags first: ${order.riskFlags.join(', ')}.` });
+    if (context.mode === 'LIVE') return providerRequired(reply, 'payments', 'P2P payout execution is not connected.');
+    const wallet = requiredWallet(store, context.user.id, context.mode);
+    const platform = requiredPlatformWallet(store, context.mode);
+    ensureSufficientBalance(store, wallet.id, BigInt(order.amountMinor));
+    postLedgerTransaction(store, { mode: context.mode, idempotencyKey: body.idempotencyKey, description: `P2P payout ${order.externalOrderId}`, entries: [{ accountId: wallet.id, side: 'DEBIT', amountMinor: order.amountMinor }, { accountId: platform.id, side: 'CREDIT', amountMinor: order.amountMinor }], metadata: { orderId: order.id } });
+    const paid = store.saveP2pOrder({ ...order, status: 'PAID', updatedAt: new Date().toISOString() });
+    return { order: paid, balanceNgn: fromMinor(userWalletBalanceMinor(store, context.user.id, context.mode)) };
+  });
+  app.post('/v1/p2p/orders/:id/reject', async (request, reply) => {
+    const context = requestContext(request, store, environment);
+    const order = store.getP2pOrder((request.params as { id: string }).id);
+    if (!order || order.userId !== context.user.id || order.mode !== context.mode) return reply.status(404).send({ code: 'ORDER_NOT_FOUND', message: 'P2P order not found.' });
+    const rejected = store.saveP2pOrder({ ...order, status: 'REJECTED', updatedAt: new Date().toISOString() });
+    return { order: rejected };
+  });
+  app.get('/v1/bills', async (request) => {
+    const context = requestContext(request, store, environment);
+    return { payments: store.listBillPayments({ userId: context.user.id, mode: context.mode }) };
+  });
+  app.post('/v1/bills/pay', async (request, reply) => {
+    const context = requestContext(request, store, environment);
+    const body = z.object({ service: z.enum(['AIRTIME', 'DATA', 'ELECTRICITY', 'CABLE', 'INTERNET', 'BETTING', 'EDUCATION']), customerReference: z.string().trim().min(3).max(80), amountNgn: money, pin: z.string().regex(/^\d{4}$/), idempotencyKey: z.string().min(8).max(120) }).parse(request.body);
+    if (store.findLedgerByIdempotencyKey(body.idempotencyKey)) return reply.status(409).send({ code: 'DUPLICATE_REQUEST', message: 'This bill-payment request was already processed.' });
+    if (context.mode === 'DEMO' && body.pin !== '1234') return reply.status(401).send({ code: 'INVALID_DEMO_PIN', message: 'The demo transaction PIN is 1234.' });
+    if (context.mode === 'LIVE') return providerRequired(reply, 'payments', 'Bill-payment provider is not connected.');
+    const amountMinor = toMinor(body.amountNgn);
+    const feeMinor = toMinor(50);
+    const wallet = requiredWallet(store, context.user.id, context.mode);
+    const platform = requiredPlatformWallet(store, context.mode);
+    ensureSufficientBalance(store, wallet.id, amountMinor + feeMinor);
+    postLedgerTransaction(store, { mode: context.mode, idempotencyKey: body.idempotencyKey, description: `${body.service} payment`, entries: [{ accountId: wallet.id, side: 'DEBIT', amountMinor: (amountMinor + feeMinor).toString() }, { accountId: platform.id, side: 'CREDIT', amountMinor: (amountMinor + feeMinor).toString() }], metadata: { customerReference: body.customerReference } });
+    const now = new Date().toISOString();
+    const payment: BillPayment = { id: `bill_${randomUUID()}`, userId: context.user.id, mode: context.mode, service: body.service, customerReference: body.customerReference, amountMinor: amountMinor.toString(), feeMinor: feeMinor.toString(), provider: 'Demo bill rail', status: 'PAID', createdAt: now, updatedAt: now };
+    store.saveBillPayment(payment);
+    return reply.status(201).send({ payment, balanceNgn: fromMinor(userWalletBalanceMinor(store, context.user.id, context.mode)), receipt: `MZ-${payment.id.slice(-8).toUpperCase()}` });
+  });
   app.post('/v1/trades/quote', async (request, reply) => {
-    const context = requestContext(request, store);
+    const context = requestContext(request, store, environment);
     const body = z.object({ mint: z.string().min(20), side: z.enum(['BUY', 'SELL']), amountNgn: money }).parse(request.body);
     const token = store.listTokens(context.mode).find((item) => item.mint === body.mint);
     if (!token) return reply.status(404).send({ code: 'TOKEN_NOT_FOUND', message: 'Token not found in this mode.' });
@@ -253,7 +428,7 @@ export async function buildApp(options: AppOptions = {}) {
     return { quoteId: `quote_${randomUUID()}`, expiresAt: new Date(Date.now() + 30_000).toISOString(), token, side: body.side, amountNgn: body.amountNgn.toFixed(2), feeNgn: fee.toFixed(2), estimatedQuantity: ((body.amountNgn - fee) / Number(token.priceNgn)).toFixed(6), slippagePercent: 1.5, mode: context.mode };
   });
   app.post('/v1/trades/execute', async (request, reply) => {
-    const context = requestContext(request, store);
+    const context = requestContext(request, store, environment);
     const body = z.object({ mint: z.string().min(20), side: z.enum(['BUY', 'SELL']), amountNgn: money, idempotencyKey: z.string().min(8).max(120) }).parse(request.body);
     if (context.mode === 'LIVE') return providerRequired(reply, 'trading', 'Trading provider is not configured.');
     const token = store.listTokens(context.mode).find((item) => item.mint === body.mint);
@@ -351,7 +526,8 @@ export async function buildApp(options: AppOptions = {}) {
     if (current.type === 'DEPOSIT' && body.decision === 'CONFIRMED') {
       const wallet = requiredWallet(store, current.userId, current.mode);
       const platform = requiredPlatformWallet(store, current.mode);
-      postLedgerTransaction(store, { mode: current.mode, idempotencyKey: `deposit-${current.id}`, description: `Confirmed deposit ${current.reference}`, entries: [{ accountId: platform.id, side: 'DEBIT', amountMinor: current.amountMinor }, { accountId: wallet.id, side: 'CREDIT', amountMinor: current.amountMinor }] });
+      const net = BigInt(current.amountMinor) - BigInt(current.feeMinor);
+      postLedgerTransaction(store, { mode: current.mode, idempotencyKey: `deposit-${current.id}`, description: `Confirmed deposit ${current.reference}`, entries: [{ accountId: platform.id, side: 'DEBIT', amountMinor: net.toString() }, { accountId: wallet.id, side: 'CREDIT', amountMinor: net.toString() }] });
     }
     if (current.type === 'WITHDRAWAL' && body.decision === 'PAID') {
       const wallet = requiredWallet(store, current.userId, current.mode);
@@ -364,6 +540,10 @@ export async function buildApp(options: AppOptions = {}) {
     return { request: updated };
   });
   app.get('/v1/admin/trades', async (request) => ({ trades: store.listTrades({ mode: adminMode(request) }) }));
+  app.get('/v1/admin/virtual-accounts', async (request) => ({ accounts: store.listVirtualAccounts({ mode: adminMode(request) }) }));
+  app.get('/v1/admin/ai-payments', async (request) => ({ payments: store.listAiPaymentDrafts({ mode: adminMode(request) }) }));
+  app.get('/v1/admin/p2p-orders', async (request) => ({ orders: store.listP2pOrders({ mode: adminMode(request) }) }));
+  app.get('/v1/admin/bill-payments', async (request) => ({ payments: store.listBillPayments({ mode: adminMode(request) }) }));
   app.get('/v1/admin/tokens', async (request) => ({
     tokens: store.listTokens(adminMode(request)).map((token) => ({
       ...token,
@@ -505,15 +685,6 @@ export async function buildApp(options: AppOptions = {}) {
     audit(store, request, 'INCIDENT_UPDATED', 'INCIDENT', updated.id, body.note || `Status changed to ${updated.status}`, current, updated);
     return { incident: updated };
   });
-  app.get('/v1/admin/bounties', async (request) => ({ bounties: store.listBounties(adminMode(request)) }));
-  app.post('/v1/admin/bounties', async (request, reply) => {
-    const mode = adminMode(request);
-    const body = z.object({ title: z.string().min(4).max(180), sponsor: z.string().min(2).max(120), rewardNgn: money, category: z.string().min(2).max(80), deadline: z.string().datetime() }).parse(request.body);
-    const bounty = { id: `bounty_${randomUUID()}`, mode, title: body.title, sponsor: body.sponsor, rewardNgn: body.rewardNgn.toFixed(2), category: body.category, deadline: body.deadline, status: 'OPEN' as const };
-    store.saveBounty(bounty);
-    audit(store, request, 'BOUNTY_CREATED', 'BOUNTY', bounty.id, 'Funded bounty created', undefined, bounty);
-    return reply.status(201).send({ bounty });
-  });
   app.get('/v1/admin/bot-controls', async (request) => ({
     mode: adminMode(request),
     users: store.listUsers({ mode: adminMode(request) }).map((user) => ({ userId: user.id, name: user.name, settings: botSettings.get(user.id) || null }))
@@ -521,7 +692,7 @@ export async function buildApp(options: AppOptions = {}) {
   app.patch('/v1/admin/bot-controls/:userId', async (request, reply) => {
     const user = store.getUser((request.params as { userId: string }).userId);
     if (!user) return reply.status(404).send({ code: 'USER_NOT_FOUND', message: 'User not found.' });
-    const current = botSettings.get(user.id) || { active: false, riskLevel: 'BALANCED', maxTradeNgn: 10000, takeProfitPercent: 30, stopLossPercent: 12, dailyLossLimitPercent: 5 };
+    const current = botSettings.get(user.id) || defaultBotSettings();
     const body = z.object({ active: z.boolean() }).parse(request.body);
     const updated = { ...current, active: body.active };
     botSettings.set(user.id, updated);
@@ -589,9 +760,11 @@ const CampaignRequestSchema = CampaignSchema.extend({
 });
 
 const OperationsSettingsSchema = z.object({
+  depositFeePercent: z.number().min(0).max(10),
   swapFeePercent: z.number().min(0).max(10),
   botFeePercent: z.number().min(0).max(25),
   withdrawalFeePercent: z.number().min(0).max(10),
+  cryptoWithdrawalMarginPercent: z.number().min(0).max(10),
   minimumDepositNgn: z.number().min(100).max(10_000_000),
   maximumWithdrawalNgn: z.number().min(1000).max(1_000_000_000),
   dailyUserLimitNgn: z.number().min(1000).max(1_000_000_000),
@@ -608,9 +781,11 @@ const IncidentCreateSchema = z.object({
 
 function defaultOperationsSettings(): OperationsSettings {
   return {
+    depositFeePercent: 0.5,
     swapFeePercent: 1,
     botFeePercent: 5,
     withdrawalFeePercent: 0.5,
+    cryptoWithdrawalMarginPercent: 0.1,
     minimumDepositNgn: 1000,
     maximumWithdrawalNgn: 5_000_000,
     dailyUserLimitNgn: 10_000_000,
@@ -619,18 +794,41 @@ function defaultOperationsSettings(): OperationsSettings {
   };
 }
 
+function defaultBotSettings() {
+  return {
+    active: false,
+    automationMode: 'SIMULATION' as const,
+    riskLevel: 'BALANCED',
+    maxTradeNgn: 10_000,
+    takeProfitPercent: 30,
+    stopLossPercent: 12,
+    dailyLossLimitPercent: 5,
+    maxOpenTrades: 3,
+    maxSlippagePercent: 1.5,
+    minimumLiquidityNgn: 2_000_000
+  };
+}
+
 function providerFamilyReady(store: MemoryStore, family: string) {
   return store.listProviders().some((provider) => provider.family === family && provider.enabled && provider.status === 'CONNECTED');
 }
 
-function requestContext(request: FastifyRequest, store: MemoryStore) {
-  return optionalContext(request, store) || { mode: 'DEMO' as Mode, user: store.getUser('demo-user-ada')! };
+function requestContext(request: FastifyRequest, store: MemoryStore, environment: string) {
+  const context = optionalContext(request, store, environment);
+  if (context) return context;
+  if (environment === 'production') {
+    throw Object.assign(new Error('A signed-in session is required.'), { statusCode: 401, code: 'UNAUTHORIZED' });
+  }
+  const demo = store.getUser('demo-user-ada');
+  if (!demo) throw Object.assign(new Error('Demo user is unavailable.'), { statusCode: 503, code: 'DEMO_UNAVAILABLE' });
+  return { mode: 'DEMO' as Mode, user: demo };
 }
 
-function optionalContext(request: FastifyRequest, store: MemoryStore) {
+function optionalContext(request: FastifyRequest, store: MemoryStore, environment: string) {
   const token = request.headers.authorization?.replace(/^Bearer\s+/i, '') || '';
   const user = token ? resolveSession(store, token) : undefined;
   if (user) return { mode: user.mode, user };
+  if (environment === 'production') return undefined;
   if (!request.headers['x-app-mode']) return undefined;
   const mode = String(request.headers['x-app-mode']).toUpperCase() as Mode;
   if (mode === 'LIVE') {
@@ -660,7 +858,7 @@ function requiredPlatformWallet(store: MemoryStore, mode: Mode) {
 
 function createMoneyRequest(user: User, type: MoneyRequest['type'], amountNgn: number, provider: string): MoneyRequest {
   const now = new Date().toISOString();
-  return { id: `${type.toLowerCase()}_${randomUUID()}`, mode: user.mode, userId: user.id, type, amountMinor: toMinor(amountNgn).toString(), feeMinor: '0', status: 'PENDING', provider, reference: `NM-${type.slice(0, 3)}-${Date.now().toString(36).toUpperCase()}`, createdAt: now, updatedAt: now };
+  return { id: `${type.toLowerCase()}_${randomUUID()}`, mode: user.mode, userId: user.id, type, amountMinor: toMinor(amountNgn).toString(), feeMinor: '0', status: 'PENDING', provider, reference: `MZ-${type.slice(0, 3)}-${Date.now().toString(36).toUpperCase()}`, createdAt: now, updatedAt: now };
 }
 
 function walletSummaries(store: MemoryStore, user: User) {
@@ -683,7 +881,7 @@ function marketState(mode: Mode) {
 }
 
 function statusPayload(environment: string, store: MemoryStore) {
-  return { ok: true, appRunning: true, service: 'nairameme-api', environment, modeIsolation: true, database: 'IN_MEMORY_DEVELOPMENT', providers: providerStateMap(store), paperBroker: { status: 'AVAILABLE', mode: 'DEMO' }, liveTrading: { enabled: false, reason: 'Audited custody and execution adapters are not configured.' }, features: config.flags };
+  return { ok: true, appRunning: true, service: 'memezo-api', environment, modeIsolation: true, database: 'IN_MEMORY_DEVELOPMENT', providers: providerStateMap(store), paperBroker: { status: 'AVAILABLE', mode: 'DEMO' }, liveTrading: { enabled: false, reason: 'Audited custody and execution adapters are not configured.' }, features: config.flags };
 }
 
 function providerStateMap(store: MemoryStore): Record<string, ProviderConfig & { secret: string }> {
@@ -698,9 +896,10 @@ function providerStateMap(store: MemoryStore): Record<string, ProviderConfig & {
 
 function defaultProviders(): ProviderConfig[] {
   return [
-    provider('monnify', 'payments', 'Monnify', 1, 'https://app.monnify.com/', ['API Key', 'Secret Key', 'Contract Code', 'Base URL', 'Webhook Secret']),
-    provider('paystack', 'payments', 'Paystack', 2, 'https://dashboard.paystack.com/', ['Secret Key', 'Public Key', 'Webhook Secret', 'Base URL']),
-    provider('flutterwave', 'payments', 'Flutterwave', 3, 'https://app.flutterwave.com/', ['Secret Key', 'Public Key', 'Encryption Key', 'Webhook Secret', 'Base URL']),
+    provider('nomba', 'payments', 'Nomba', 1, 'https://dashboard.nomba.com/', ['Client ID', 'Client Secret', 'Account ID', 'Base URL', 'Webhook Secret']),
+    provider('monnify', 'payments', 'Monnify', 2, 'https://app.monnify.com/', ['API Key', 'Secret Key', 'Contract Code', 'Base URL', 'Webhook Secret']),
+    provider('paystack', 'payments', 'Paystack', 3, 'https://dashboard.paystack.com/', ['Secret Key', 'Public Key', 'Webhook Secret', 'Base URL']),
+    provider('flutterwave', 'payments', 'Flutterwave', 4, 'https://app.flutterwave.com/', ['Secret Key', 'Public Key', 'Encryption Key', 'Webhook Secret', 'Base URL']),
     provider('supabase', 'identity', 'Supabase Auth', 1, 'https://supabase.com/dashboard', ['Project URL', 'Anon key', 'Service role secret']),
     provider('dojah', 'kyc', 'Dojah', 1, 'https://app.dojah.io/', ['App ID', 'Secret Key', 'Base URL']),
     provider('smileid', 'kyc', 'Smile ID', 2, 'https://portal.smileidentity.com/', ['Partner ID', 'API Key', 'Callback URL']),
@@ -723,6 +922,9 @@ function defaultProviders(): ProviderConfig[] {
     provider('firebase', 'push', 'Firebase Cloud Messaging', 2, 'https://console.firebase.google.com/', ['Project ID', 'Service Account Credentials']),
     provider('apns', 'push', 'Apple Push Notifications', 3, 'https://developer.apple.com/account/resources/authkeys/list', ['Key ID', 'Team ID', 'APNs key']),
     provider('emergent', 'ai', 'Emergent Universal LLM', 1, 'https://app.emergent.sh/', ['Provider Name', 'Base URL', 'API Key', 'Model', 'Monthly Budget Limit']),
+    provider('vtpass', 'bills', 'VTPass', 1, 'https://www.vtpass.com/register', ['API Key', 'Secret Key', 'Public Key', 'Webhook Secret']),
+    provider('sudo', 'cards', 'Sudo Cards', 1, 'https://app.sudo.africa/', ['API Key', 'Vault Key', 'Webhook Secret', 'Base URL']),
+    provider('whatsapp', 'messaging', 'WhatsApp Cloud API', 1, 'https://developers.facebook.com/apps/', ['App ID', 'Phone Number ID', 'Access Token', 'Verify Token', 'App Secret']),
     provider('turnkey', 'custody', 'Turnkey', 1, 'https://app.turnkey.com/', ['Organization ID', 'API Public Key', 'API Private Key']),
     provider('trmlabs', 'transactionRisk', 'TRM Labs', 1, 'https://www.trmlabs.com/contact', ['API URL', 'API Key']),
     provider('chainalysis', 'transactionRisk', 'Chainalysis', 2, 'https://www.chainalysis.com/contact/', ['API URL', 'API Key']),
@@ -769,5 +971,18 @@ function tokenExplanation(token: { runnerScore: number; riskScore: number; liqui
 }
 function emptyState() {
   const seeded = seedDemoData();
-  return { ...seeded, users: [], wallets: [], ledgerTransactions: [], kycCases: [], tokens: [], bounties: [], alerts: [], moneyRequests: [], trades: [], positions: [] };
+  return { ...seeded, users: [], wallets: [], ledgerTransactions: [], kycCases: [], tokens: [], alerts: [], moneyRequests: [], virtualAccounts: [], aiPaymentDrafts: [], p2pOrders: [], billPayments: [], trades: [], positions: [] };
+}
+
+function parsePaymentInstruction(instruction: string) {
+  const normalized = instruction.replace(/,/g, '');
+  const amountMatch = normalized.match(/(?:₦|NGN\s*)?(\d+(?:\.\d{1,2})?)/i);
+  const accountMatch = normalized.match(/\b(\d{10})\b/);
+  const bankMatch = normalized.match(/\b(Access|GTBank|Guaranty Trust|UBA|Zenith|First Bank|Kuda|Opay|PalmPay|Moniepoint|Fidelity|Stanbic|FCMB|Wema)\b/i);
+  return {
+    amountNgn: amountMatch ? Number(amountMatch[1]) : undefined,
+    accountNumber: accountMatch?.[1],
+    bankName: bankMatch?.[1],
+    narration: 'Prepared by MemeZo AI Pay'
+  };
 }

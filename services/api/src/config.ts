@@ -2,7 +2,7 @@ export const config = {
   port: Number(process.env.API_PORT || 8790),
   host: process.env.API_HOST || (process.env.NODE_ENV === 'production' ? '127.0.0.1' : '0.0.0.0'),
   environment: process.env.NODE_ENV || 'development',
-  appUrl: process.env.APP_URL || 'nairameme://',
+  appUrl: process.env.APP_URL || 'memezo://',
   adminApiToken: process.env.ADMIN_API_TOKEN || '',
   adminOrigins: (process.env.ADMIN_ALLOWED_ORIGINS || 'http://127.0.0.1:5173,http://localhost:5173')
     .split(',')

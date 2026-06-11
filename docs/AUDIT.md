@@ -1,4 +1,4 @@
-# NairaMeme Foundation Audit
+# MemeZo Foundation Audit
 
 Audit date: 2026-06-05
 

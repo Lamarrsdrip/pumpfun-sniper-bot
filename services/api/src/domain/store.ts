@@ -1,17 +1,20 @@
 import type {
   Alert,
+  AiPaymentDraft,
   AuditEvent,
-  Bounty,
+  BillPayment,
   KycCase,
   LedgerTransaction,
   MoneyRequest,
   Mode,
   Position,
+  P2pOrder,
   ProviderConfig,
   StoreState,
   TokenSnapshot,
   Trade,
   User,
+  VirtualAccount,
   WalletAccount
 } from './types.js';
 
@@ -93,15 +96,6 @@ export function createMemoryStore(initial: StoreState) {
     listTokens(mode: Mode): TokenSnapshot[] {
       return clone(state.tokens.filter((token) => token.mode === mode).sort((left, right) => right.observedAt.localeCompare(left.observedAt)));
     },
-    listBounties(mode: Mode): Bounty[] {
-      return clone(state.bounties.filter((bounty) => bounty.mode === mode));
-    },
-    saveBounty(value: Bounty): Bounty {
-      const index = state.bounties.findIndex((item) => item.id === value.id);
-      if (index >= 0) state.bounties[index] = clone(value);
-      else state.bounties.push(clone(value));
-      return clone(value);
-    },
     listAlerts(mode: Mode): Alert[] {
       return clone(state.alerts.filter((alert) => alert.mode === mode).sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
     },
@@ -120,6 +114,57 @@ export function createMemoryStore(initial: StoreState) {
       const index = state.moneyRequests.findIndex((item) => item.id === value.id);
       if (index >= 0) state.moneyRequests[index] = clone(value);
       else state.moneyRequests.push(clone(value));
+      return clone(value);
+    },
+    listVirtualAccounts(filter: { mode?: Mode; userId?: string } = {}): VirtualAccount[] {
+      return clone(state.virtualAccounts
+        .filter((item) => !filter.mode || item.mode === filter.mode)
+        .filter((item) => !filter.userId || item.userId === filter.userId));
+    },
+    saveVirtualAccount(value: VirtualAccount): VirtualAccount {
+      const index = state.virtualAccounts.findIndex((item) => item.id === value.id);
+      if (index >= 0) state.virtualAccounts[index] = clone(value);
+      else state.virtualAccounts.push(clone(value));
+      return clone(value);
+    },
+    listAiPaymentDrafts(filter: { mode?: Mode; userId?: string } = {}): AiPaymentDraft[] {
+      return clone(state.aiPaymentDrafts
+        .filter((item) => !filter.mode || item.mode === filter.mode)
+        .filter((item) => !filter.userId || item.userId === filter.userId)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
+    },
+    getAiPaymentDraft(id: string): AiPaymentDraft | undefined {
+      return clone(state.aiPaymentDrafts.find((item) => item.id === id));
+    },
+    saveAiPaymentDraft(value: AiPaymentDraft): AiPaymentDraft {
+      const index = state.aiPaymentDrafts.findIndex((item) => item.id === value.id);
+      if (index >= 0) state.aiPaymentDrafts[index] = clone(value);
+      else state.aiPaymentDrafts.push(clone(value));
+      return clone(value);
+    },
+    listP2pOrders(filter: { mode?: Mode; userId?: string } = {}): P2pOrder[] {
+      return clone(state.p2pOrders
+        .filter((item) => !filter.mode || item.mode === filter.mode)
+        .filter((item) => !filter.userId || item.userId === filter.userId)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
+    },
+    getP2pOrder(id: string): P2pOrder | undefined {
+      return clone(state.p2pOrders.find((item) => item.id === id));
+    },
+    saveP2pOrder(value: P2pOrder): P2pOrder {
+      const index = state.p2pOrders.findIndex((item) => item.id === value.id);
+      if (index >= 0) state.p2pOrders[index] = clone(value);
+      else state.p2pOrders.push(clone(value));
+      return clone(value);
+    },
+    listBillPayments(filter: { mode?: Mode; userId?: string } = {}): BillPayment[] {
+      return clone(state.billPayments
+        .filter((item) => !filter.mode || item.mode === filter.mode)
+        .filter((item) => !filter.userId || item.userId === filter.userId)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
+    },
+    saveBillPayment(value: BillPayment): BillPayment {
+      state.billPayments.push(clone(value));
       return clone(value);
     },
     listTrades(filter: { mode?: Mode; userId?: string } = {}): Trade[] {

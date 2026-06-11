@@ -4,7 +4,7 @@ import { AssetIcon, Button, ModePill, Page } from '@/components';
 import { dark } from '@/theme';
 const assets = ['NGN', 'USDT', 'SOL', 'NFROG'];
 export default function SwapScreen() {
-  const [from, setFrom] = useState('NGN'); const [to, setTo] = useState('USDT'); const [amount, setAmount] = useState('50000'); const [done, setDone] = useState(false);
+  const [from, setFrom] = useState('NGN'); const [to, setTo] = useState('USDT'); const [amount, setAmount] = useState('50000'); const [quoted, setQuoted] = useState(false);
   const receive = from === 'NGN' ? (Number(amount || 0) / 1570).toFixed(2) : (Number(amount || 0) * 1570).toFixed(2);
   return <Page><ModePill /><Text style={{ color: dark.text, fontSize: 28, fontWeight: '900' }}>Swap simply</Text><Text style={{ color: dark.muted }}>A clear quote before anything moves.</Text>
     <View style={{ padding: 17, borderRadius: 16, backgroundColor: dark.surface, borderWidth: 1, borderColor: dark.border, gap: 14 }}>
@@ -13,8 +13,8 @@ export default function SwapScreen() {
       <AssetBox label="You receive" asset={to} amount={receive} />
       <Text style={{ color: dark.muted, fontSize: 12 }}>Choose assets</Text><View style={{ flexDirection: 'row', gap: 7 }}>{assets.map(a => <Pressable key={a} onPress={() => a !== from && setTo(a)} style={{ padding: 9, borderRadius: 8, backgroundColor: a === to ? dark.green : dark.surfaceRaised }}><Text style={{ color: a === to ? '#06110D' : dark.text, fontWeight: '800', fontSize: 11 }}>{a}</Text></Pressable>)}</View>
       <Line label="Rate" value="1 USDT = ₦1,570.00" /><Line label="Service + route fee" value="₦325.00" /><Line label="Price impact" value="0.18%" /><Line label="Max slippage" value="1.0%" />
-      {done ? <Text style={{ color: dark.green, fontWeight: '800' }}>Demo swap completed. Your Wallet has been updated for this preview session.</Text> : null}
-      <Button title={done ? 'Swap completed' : 'Confirm demo swap'} disabled={done} onPress={() => setDone(true)} />
+      {quoted ? <Text style={{ color: dark.yellow, fontWeight: '800', lineHeight: 19 }}>Demo quote prepared. No balance changed because a backend crypto custody and swap adapter is not connected.</Text> : null}
+      <Button title={quoted ? 'Quote prepared' : 'Preview demo quote'} disabled={quoted} onPress={() => setQuoted(true)} />
     </View>
   </Page>;
 }

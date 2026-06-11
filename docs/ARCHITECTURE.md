@@ -1,8 +1,8 @@
-# NairaMeme Platform Architecture
+# MemeZo Platform Architecture
 
 ## Product Boundary
 
-NairaMeme is a native mobile product backed by regulated-provider integrations and server-side trading services. The mobile app never stores payment-provider secrets, exchange credentials, custodial wallet keys, or signing material.
+MemeZo is a native mobile product backed by regulated-provider integrations and server-side trading services. The mobile app never stores payment-provider secrets, exchange credentials, custodial wallet keys, or signing material.
 
 ## Runtime Topology
 

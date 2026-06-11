@@ -110,17 +110,6 @@ export type TokenSnapshot = {
   observedAt: string;
 };
 
-export type Bounty = {
-  id: string;
-  mode: Mode;
-  title: string;
-  sponsor: string;
-  rewardNgn: string;
-  category: string;
-  deadline: string;
-  status: 'OPEN' | 'CLOSED';
-};
-
 export type Alert = {
   id: string;
   mode: Mode;
@@ -143,6 +132,70 @@ export type MoneyRequest = {
   bankName?: string;
   accountNumber?: string;
   accountName?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type VirtualAccount = {
+  id: string;
+  userId: string;
+  mode: Mode;
+  provider: string;
+  bankName: string;
+  accountName: string;
+  accountNumber: string;
+  reference: string;
+  status: 'ACTIVE' | 'PENDING' | 'DISABLED';
+  createdAt: string;
+};
+
+export type AiPaymentDraft = {
+  id: string;
+  userId: string;
+  mode: Mode;
+  source: 'TEXT' | 'IMAGE';
+  instruction: string;
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  amountMinor: string;
+  narration: string;
+  riskFlags: string[];
+  duplicateOf?: string;
+  status: 'REVIEW' | 'APPROVED' | 'PAID' | 'REJECTED' | 'FAILED';
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type P2pOrder = {
+  id: string;
+  userId: string;
+  mode: Mode;
+  exchange: string;
+  externalOrderId: string;
+  sellerName: string;
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  amountMinor: string;
+  asset: string;
+  assetQuantity: string;
+  riskFlags: string[];
+  status: 'PENDING' | 'APPROVED' | 'PAID' | 'REJECTED' | 'FAILED' | 'REVIEW';
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BillPayment = {
+  id: string;
+  userId: string;
+  mode: Mode;
+  service: 'AIRTIME' | 'DATA' | 'ELECTRICITY' | 'CABLE' | 'INTERNET' | 'BETTING' | 'EDUCATION';
+  customerReference: string;
+  amountMinor: string;
+  feeMinor: string;
+  provider: string;
+  status: 'PENDING' | 'PAID' | 'FAILED';
   createdAt: string;
   updatedAt: string;
 };
@@ -180,9 +233,12 @@ export type StoreState = {
   providers: ProviderConfig[];
   auditEvents: AuditEvent[];
   tokens: TokenSnapshot[];
-  bounties: Bounty[];
   alerts: Alert[];
   moneyRequests: MoneyRequest[];
+  virtualAccounts: VirtualAccount[];
+  aiPaymentDrafts: AiPaymentDraft[];
+  p2pOrders: P2pOrder[];
+  billPayments: BillPayment[];
   trades: Trade[];
   positions: Position[];
   sessions: Array<{ id: string; userId: string; tokenHash: string; expiresAt: string; revokedAt?: string }>;

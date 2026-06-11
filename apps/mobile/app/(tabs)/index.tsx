@@ -20,9 +20,14 @@ export default function HomeScreen() {
         <IconButton icon="add" label="Deposit" onPress={() => router.push('/deposit')} />
         <IconButton icon="arrow-up" label="Withdraw" onPress={() => router.push('/withdraw')} color={dark.cyan} />
         <IconButton icon="swap-horizontal" label="Swap" onPress={() => router.push('/swap')} color={dark.purple} />
-        <IconButton icon="rocket" label="Buy meme" onPress={() => router.push('/(tabs)/discover')} color={dark.yellow} />
+        <IconButton icon="sparkles" label="AI Pay" onPress={() => router.push('/ai-pay')} color={dark.yellow} />
       </View>
     </LinearGradient>
+    <View style={{ flexDirection: 'row', gap: 10 }}>
+      <QuickAction title="P2P Manager" detail="Merchant payouts" onPress={() => router.push('/p2p')} />
+      <QuickAction title="Pay bills" detail="Airtime and utilities" onPress={() => router.push('/bills')} />
+      <QuickAction title="Cards" detail="Provider-ready" onPress={() => router.push('/cards')} />
+    </View>
     <SectionHeader title="Runner AI radar" action="See all" onPress={() => router.push('/(tabs)/discover')} />
     <Pressable onPress={() => router.push(`/token/${demoTokens[0].mint}`)}>
       <LinearGradient colors={['#17251F', '#101513']} style={{ borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#335444', gap: 12 }}>
@@ -41,3 +46,4 @@ export default function HomeScreen() {
   </Page>;
 }
 function Tag({ text, color }: { text: string; color: string }) { return <View style={{ paddingHorizontal: 8, paddingVertical: 5, borderRadius: 99, backgroundColor: `${color}18` }}><Text style={{ color, fontSize: 10, fontWeight: '900' }}>{text}</Text></View>; }
+function QuickAction({ title, detail, onPress }: { title: string; detail: string; onPress: () => void }) { return <Pressable onPress={onPress} style={{ flex: 1, minHeight: 78, padding: 11, borderRadius: 12, backgroundColor: dark.surface, borderWidth: 1, borderColor: dark.border }}><Text numberOfLines={2} style={{ color: dark.text, fontSize: 12, fontWeight: '900' }}>{title}</Text><Text numberOfLines={2} style={{ color: dark.muted, fontSize: 9, lineHeight: 13, paddingTop: 5 }}>{detail}</Text></Pressable>; }
