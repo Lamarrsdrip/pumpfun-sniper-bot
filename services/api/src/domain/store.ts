@@ -297,8 +297,29 @@ export function createMemoryStore(initial: StoreState) {
     getCredential(userId: string) {
       return clone(state.credentials.find((credential) => credential.userId === userId));
     },
+    saveTransactionPin(value: StoreState['transactionPins'][number]) {
+      const index = state.transactionPins.findIndex((item) => item.userId === value.userId);
+      if (index >= 0) state.transactionPins[index] = clone(value);
+      else state.transactionPins.push(clone(value));
+      return clone(value);
+    },
+    getTransactionPin(userId: string) {
+      return clone(state.transactionPins.find((item) => item.userId === userId));
+    },
+    saveTrustedDevice(value: StoreState['trustedDevices'][number]) {
+      const index = state.trustedDevices.findIndex((item) => item.id === value.id);
+      if (index >= 0) state.trustedDevices[index] = clone(value);
+      else state.trustedDevices.push(clone(value));
+      return clone(value);
+    },
+    findTrustedDevice(userId: string, deviceId: string) {
+      return clone(state.trustedDevices.find((item) => item.userId === userId && item.deviceId === deviceId && !item.revokedAt));
+    },
     saveSession(session: StoreState['sessions'][number]) {
-      state.sessions.push(clone(session));
+      const index = state.sessions.findIndex((item) => item.id === session.id);
+      if (index >= 0) state.sessions[index] = clone(session);
+      else state.sessions.push(clone(session));
+      return clone(session);
     },
     findSessionByHash(tokenHash: string) {
       return clone(state.sessions.find((session) => session.tokenHash === tokenHash));
@@ -306,6 +327,9 @@ export function createMemoryStore(initial: StoreState) {
     revokeSession(id: string, revokedAt: string) {
       const session = state.sessions.find((item) => item.id === id);
       if (session) session.revokedAt = revokedAt;
+    },
+    listSessions(userId: string) {
+      return clone(state.sessions.filter((session) => session.userId === userId));
     }
   };
 }

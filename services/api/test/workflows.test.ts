@@ -25,6 +25,39 @@ test('authenticated role controls admin visibility', async () => {
   await app.close();
 });
 
+test('session rotation revokes the old token and returns a new device-bound session', async () => {
+  const app = await buildApp();
+  const signedIn = await app.inject({
+    method: 'POST',
+    url: '/v1/auth/demo',
+    headers: { 'x-device-id': 'device-one', 'x-device-name': 'Ada iPhone' },
+    payload: {}
+  });
+  const oldToken = signedIn.json().token;
+  const rotated = await app.inject({
+    method: 'POST',
+    url: '/v1/auth/session/rotate',
+    headers: { authorization: `Bearer ${oldToken}`, 'x-device-id': 'device-one' }
+  });
+  assert.equal(rotated.statusCode, 200);
+  assert.notEqual(rotated.json().token, oldToken);
+  const oldSession = await app.inject({ method: 'GET', url: '/v1/auth/me', headers: { authorization: `Bearer ${oldToken}` } });
+  assert.equal(oldSession.statusCode, 401);
+  await app.close();
+});
+
+test('admin command center exposes infrastructure, queues, treasury, and release gates', async () => {
+  const app = await buildApp();
+  const response = await app.inject({ method: 'GET', url: '/v1/admin/command-center?mode=DEMO' });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().system.app, 'RUNNING');
+  assert.equal(typeof response.json().system.database.status, 'string');
+  assert.equal(typeof response.json().queues.deposits, 'number');
+  assert.ok(Array.isArray(response.json().treasury));
+  assert.ok(Array.isArray(response.json().system.launchBlockers));
+  await app.close();
+});
+
 test('production user routes reject mode-header impersonation without a session', async () => {
   const app = await buildApp({ environment: 'production', adminApiToken: 'admin-test-token' });
   const response = await app.inject({ method: 'GET', url: '/v1/mobile/home', headers: { 'x-app-mode': 'LIVE' } });
@@ -247,7 +280,7 @@ test('internal transfer rejects self transfer and invalid PIN', async () => {
     }
   });
   assert.equal(badPin.statusCode, 401);
-  assert.equal(badPin.json().code, 'INVALID_DEMO_PIN');
+  assert.equal(badPin.json().code, 'INVALID_TRANSACTION_PIN');
   await app.close();
 });
 

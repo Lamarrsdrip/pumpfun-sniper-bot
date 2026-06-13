@@ -6,10 +6,11 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { z, ZodError } from 'zod';
 import { config } from './config.js';
 import { aiBudgetStatus, explainWithBudget } from './ai.js';
-import { issueSession, resolveSession } from './domain/auth.js';
+import { issueSession, resolveSession, rotateSession } from './domain/auth.js';
 import { accountBalanceMinor, ensureSufficientBalance, postLedgerTransaction, userWalletBalanceMinor } from './domain/ledger.js';
 import { seedDemoData } from './domain/seed.js';
 import { createMemoryStore, type MemoryStore } from './domain/store.js';
+import { evaluateTransferRisk, verifyTransactionPin as verifyHashedTransactionPin } from './domain/security.js';
 import {
   createEncryptedProviderVault,
   type ProviderCredentials,
@@ -185,7 +186,25 @@ export async function buildApp(options: AppOptions = {}) {
     const body = z.object({ userId: z.string().default('demo-user-ada') }).parse(request.body || {});
     const user = store.getUser(body.userId);
     if (!user || user.mode !== 'DEMO') return reply.status(404).send({ code: 'DEMO_USER_NOT_FOUND', message: 'Demo user not found.' });
-    return { ...issueSession(store, user.id), user };
+    return {
+      ...issueSession(store, user.id, {
+        deviceId: String(request.headers['x-device-id'] || 'demo-device'),
+        deviceName: String(request.headers['x-device-name'] || 'Expo Demo Device'),
+        ipAddress: request.ip
+      }),
+      user
+    };
+  });
+  app.post('/v1/auth/session/rotate', async (request, reply) => {
+    const token = request.headers.authorization?.replace(/^Bearer\s+/i, '') || '';
+    const rotated = rotateSession(store, token, {
+      deviceId: request.headers['x-device-id'] ? String(request.headers['x-device-id']) : undefined,
+      deviceName: request.headers['x-device-name'] ? String(request.headers['x-device-name']) : undefined,
+      ipAddress: request.ip
+    });
+    return rotated
+      ? { ...rotated, user: store.getUser(rotated.session.userId) }
+      : reply.status(401).send({ code: 'SESSION_EXPIRED', message: 'Sign in again to continue.' });
   });
   app.get('/v1/me', async (request) => {
     const context = requestContext(request, store, environment);
@@ -308,18 +327,39 @@ export async function buildApp(options: AppOptions = {}) {
       recipientId: z.string().min(4),
       amountNgn: money,
       narration: z.string().trim().max(120).default('MemeZo transfer'),
-      pin: z.string().regex(/^\d{4}$/),
+      pin: z.string().regex(/^\d{4,6}$/),
       idempotencyKey: z.string().min(8).max(120)
     }).parse(request.body);
     if (body.recipientId === context.user.id) return reply.status(409).send({ code: 'SELF_TRANSFER_NOT_ALLOWED', message: 'Choose another MemeZo user.' });
-    if (context.mode === 'DEMO' && body.pin !== '1234') return reply.status(401).send({ code: 'INVALID_DEMO_PIN', message: 'The demo transaction PIN is 1234.' });
+    assertTransactionPin(store, context.user, body.pin);
     const recipient = store.getUser(body.recipientId);
     if (!recipient || recipient.mode !== context.mode || recipient.status !== 'ACTIVE') {
       return reply.status(404).send({ code: 'RECIPIENT_NOT_FOUND', message: 'The MemeZo recipient is unavailable.' });
     }
-    if (recipient.kycStatus !== 'APPROVED') return reply.status(409).send({ code: 'RECIPIENT_NOT_VERIFIED', message: 'This recipient cannot receive internal transfers yet.' });
-    if (context.mode === 'LIVE') return providerRequired(reply, 'payments', 'Live internal-transfer settlement is not enabled.');
     const amountMinor = toMinor(body.amountNgn);
+    if (recipient.kycStatus !== 'APPROVED') return reply.status(409).send({ code: 'RECIPIENT_NOT_VERIFIED', message: 'This recipient cannot receive internal transfers yet.' });
+    const recentTransfers = store.listInternalTransfers({ userId: context.user.id, mode: context.mode })
+      .filter((transfer) => transfer.senderId === context.user.id && Date.parse(transfer.createdAt) >= Date.now() - 10 * 60_000);
+    const deviceId = String(request.headers['x-device-id'] || '');
+    const risk = evaluateTransferRisk({
+      amountMinor,
+      duplicateDetected: recentTransfers.some((transfer) =>
+        transfer.recipientId === recipient.id
+        && transfer.amountMinor === amountMinor.toString()
+        && transfer.narration === body.narration
+      ),
+      transfersLastTenMinutes: recentTransfers.length,
+      deviceTrusted: context.mode === 'DEMO' || Boolean(deviceId && store.findTrustedDevice(context.user.id, deviceId)),
+      highValueThresholdMinor: 2_000_000n
+    });
+    if (!risk.allow) {
+      return reply.status(409).send({
+        code: 'TRANSFER_RISK_REVIEW',
+        message: 'This transfer needs a security review before money can move.',
+        flags: risk.flags
+      });
+    }
+    if (context.mode === 'LIVE') return providerRequired(reply, 'payments', 'Live internal-transfer settlement is not enabled.');
     const senderWallet = requiredAssetWallet(store, context.user.id, context.mode, 'NGN');
     const recipientWallet = requiredAssetWallet(store, recipient.id, context.mode, 'NGN');
     ensureSufficientBalance(store, senderWallet.id, amountMinor);
@@ -384,7 +424,7 @@ export async function buildApp(options: AppOptions = {}) {
       idempotencyKey: z.string().min(8).max(120)
     }).parse(request.body);
     if (context.mode === 'LIVE') return providerRequired(reply, 'trading', 'A live multi-chain swap provider is not connected.');
-    if (body.pin !== '1234') return reply.status(401).send({ code: 'INVALID_DEMO_PIN', message: 'The demo transaction PIN is 1234.' });
+    assertTransactionPin(store, context.user, body.pin);
     const quote = buildSwapQuote(body.fromAsset, body.toAsset, body.amount, body.slippagePercent, context.mode);
     const sourceWallet = requiredAssetWallet(store, context.user.id, context.mode, body.fromAsset);
     const targetWallet = requiredAssetWallet(store, context.user.id, context.mode, body.toAsset);
@@ -557,7 +597,7 @@ export async function buildApp(options: AppOptions = {}) {
     const draft = store.getAiPaymentDraft((request.params as { id: string }).id);
     if (!draft || draft.userId !== context.user.id || draft.mode !== context.mode) return reply.status(404).send({ code: 'PAYMENT_NOT_FOUND', message: 'Payment draft not found.' });
     const body = z.object({ pin: z.string().regex(/^\d{4}$/), idempotencyKey: z.string().min(8).max(120), confirmDuplicate: z.boolean().default(false) }).parse(request.body);
-    if (context.mode === 'DEMO' && body.pin !== '1234') return reply.status(401).send({ code: 'INVALID_DEMO_PIN', message: 'The demo transaction PIN is 1234.' });
+    assertTransactionPin(store, context.user, body.pin);
     if (draft.riskFlags.includes('POSSIBLE_DUPLICATE') && !body.confirmDuplicate) return reply.status(409).send({ code: 'DUPLICATE_CONFIRMATION_REQUIRED', message: 'This resembles a recent payment. Confirm the duplicate warning before continuing.' });
     if (context.mode === 'LIVE') return providerRequired(reply, 'payments', 'Bank transfer execution is not connected.');
     const wallet = requiredWallet(store, context.user.id, context.mode);
@@ -584,8 +624,8 @@ export async function buildApp(options: AppOptions = {}) {
     const context = requestContext(request, store, environment);
     const order = store.getP2pOrder((request.params as { id: string }).id);
     if (!order || order.userId !== context.user.id || order.mode !== context.mode) return reply.status(404).send({ code: 'ORDER_NOT_FOUND', message: 'P2P order not found.' });
-    const body = z.object({ pin: z.string().regex(/^\d{4}$/).default('1234'), idempotencyKey: z.string().min(8).max(120) }).parse(request.body || {});
-    if (context.mode === 'DEMO' && body.pin !== '1234') return reply.status(401).send({ code: 'INVALID_DEMO_PIN', message: 'The demo transaction PIN is 1234.' });
+    const body = z.object({ pin: z.string().regex(/^\d{4,6}$/), idempotencyKey: z.string().min(8).max(120) }).parse(request.body || {});
+    assertTransactionPin(store, context.user, body.pin);
     if (order.riskFlags.length) return reply.status(409).send({ code: 'MANUAL_REVIEW_REQUIRED', message: `Resolve risk flags first: ${order.riskFlags.join(', ')}.` });
     if (context.mode === 'LIVE') return providerRequired(reply, 'payments', 'P2P payout execution is not connected.');
     const wallet = requiredWallet(store, context.user.id, context.mode);
@@ -610,7 +650,7 @@ export async function buildApp(options: AppOptions = {}) {
     const context = requestContext(request, store, environment);
     const body = z.object({ service: z.enum(['AIRTIME', 'DATA', 'ELECTRICITY', 'CABLE', 'INTERNET', 'BETTING', 'EDUCATION']), customerReference: z.string().trim().min(3).max(80), amountNgn: money, pin: z.string().regex(/^\d{4}$/), idempotencyKey: z.string().min(8).max(120) }).parse(request.body);
     if (store.findLedgerByIdempotencyKey(body.idempotencyKey)) return reply.status(409).send({ code: 'DUPLICATE_REQUEST', message: 'This bill-payment request was already processed.' });
-    if (context.mode === 'DEMO' && body.pin !== '1234') return reply.status(401).send({ code: 'INVALID_DEMO_PIN', message: 'The demo transaction PIN is 1234.' });
+    assertTransactionPin(store, context.user, body.pin);
     if (context.mode === 'LIVE') return providerRequired(reply, 'payments', 'Bill-payment provider is not connected.');
     const amountMinor = toMinor(body.amountNgn);
     const feeMinor = toMinor(50);
@@ -633,7 +673,7 @@ export async function buildApp(options: AppOptions = {}) {
       provider: context.mode === 'DEMO'
         ? { status: 'DEMO', message: 'Demo connection flow only. No WhatsApp message is sent.' }
         : { status: providerFamilyReady(store, 'messaging') ? 'CONNECTED' : 'UNCONFIGURED', message: providerFamilyReady(store, 'messaging') ? 'WhatsApp provider configured.' : 'Meta WhatsApp Business credentials are required.' },
-      commands: ['balance', 'account', 'transactions', 'orders', 'pause auto pay', 'resume auto pay', 'send money instruction']
+      commands: ['balance', 'account', 'transactions', 'savings status', 'pending approvals', 'orders', 'pause auto pay', 'resume auto pay', 'send money instruction']
     };
   });
   app.get('/v1/whatsapp/settings', async (request) => {
@@ -724,6 +764,12 @@ export async function buildApp(options: AppOptions = {}) {
       const account = store.listVirtualAccounts({ userId: context.user.id, mode: context.mode })[0];
       result = account ? `${account.bankName}: ${account.accountNumber}, ${account.accountName}.` : 'No virtual account is available.';
     } else if (command === 'TRANSACTIONS') result = 'Open MemeZo to view verified transactions and receipts.';
+    else if (command === 'SAVINGS') result = 'Savings is not connected to a live provider yet. No savings balance will be fabricated.';
+    else if (command === 'APPROVALS') {
+      const pending = store.listWhatsappApprovalSessions({ userId: context.user.id, mode: context.mode })
+        .filter((item) => item.status === 'AWAITING_IN_APP_APPROVAL').length;
+      result = `${pending} secure approval${pending === 1 ? '' : 's'} waiting in MemeZo. Sensitive transfers must be approved in the app.`;
+    }
     else if (command === 'ORDERS') result = `${store.listP2pOrders({ userId: context.user.id, mode: context.mode }).filter((item) => ['PENDING', 'REVIEW'].includes(item.status)).length} P2P orders need attention.`;
     else if (command === 'PAUSE_AUTO_PAY' || command === 'RESUME_AUTO_PAY') {
       const currentSettings = whatsappSettings(store, context.user.id, context.mode);
@@ -773,7 +819,7 @@ export async function buildApp(options: AppOptions = {}) {
       idempotencyKey: z.string().min(8).max(120)
     }).parse(request.body);
     const approvalChannel = body.approvalChannel ?? body.channel ?? 'IN_APP';
-    if (context.mode === 'DEMO' && body.pin !== '1234') return reply.status(401).send({ code: 'INVALID_DEMO_PIN', message: 'The demo transaction PIN is 1234.' });
+    assertTransactionPin(store, context.user, body.pin);
     if (approval.actionType !== 'PAYMENT') return reply.status(409).send({ code: 'UNSUPPORTED_APPROVAL', message: 'This approval type is not executable yet.' });
     const payment = store.getAiPaymentDraft(approval.actionId);
     if (!payment) return reply.status(404).send({ code: 'PAYMENT_NOT_FOUND', message: 'Prepared payment was not found.' });
@@ -889,6 +935,49 @@ export async function buildApp(options: AppOptions = {}) {
       },
       providers: providerStateMap(store),
       features: config.flags
+    };
+  });
+  app.get('/v1/admin/command-center', async (request) => {
+    const mode = adminMode(request);
+    const status = statusPayload(environment, store);
+    const moneyRequests = store.listMoneyRequests({ mode });
+    const pendingWhatsappApprovals = store.listWhatsappApprovalSessions({ mode })
+      .filter((item) => item.status === 'AWAITING_IN_APP_APPROVAL').length;
+    const platformWallets = store.listWallets(mode === 'DEMO' ? 'platform-demo' : 'platform-live', mode);
+    return {
+      mode,
+      system: {
+        app: status.appRunning ? 'RUNNING' : 'OFFLINE',
+        database: status.database,
+        redis: status.redis,
+        queues: status.queues,
+        reconciliation: status.reconciliation,
+        launchBlockers: status.launchBlockers
+      },
+      queues: {
+        kyc: store.listKycCases().filter((item) => item.mode === mode && item.status === 'PENDING_REVIEW').length,
+        deposits: moneyRequests.filter((item) => item.type === 'DEPOSIT' && item.status === 'PENDING').length,
+        withdrawals: moneyRequests.filter((item) => item.type === 'WITHDRAWAL' && item.status === 'PENDING').length,
+        whatsappApprovals: pendingWhatsappApprovals,
+        incidents: [...incidents.values()].filter((item) => item.mode === mode && item.status !== 'RESOLVED').length
+      },
+      treasury: platformWallets.map((wallet) => ({
+        asset: wallet.asset,
+        available: fromMinor(accountBalanceMinor(store, wallet.id)),
+        status: mode === 'DEMO' ? 'SIMULATED' : 'UNRECONCILED'
+      })),
+      risk: {
+        highRiskTokens: store.listTokens(mode).filter((item) => item.riskScore >= 70).length,
+        failedTrades: store.listTrades({ mode }).filter((item) => item.status === 'FAILED').length,
+        unverifiedWebhookEvents: store.listWhatsappWebhookEvents(mode).filter((item) => !item.signatureVerified).length
+      },
+      providers: providerStateMap(store),
+      ai: aiBudgetStatus(),
+      whatsapp: {
+        connections: store.listWhatsappConnections({ mode }).length,
+        failedMessages: store.listWhatsappMessages({ mode }).filter((item) => item.status === 'FAILED').length,
+        rejectedWebhooks: store.listWhatsappWebhookEvents(mode).filter((item) => item.status === 'REJECTED').length
+      }
     };
   });
   app.get('/v1/admin/users', async (request) => {
@@ -1339,6 +1428,38 @@ function authenticatedUser(request: FastifyRequest, store: MemoryStore) {
   return token ? resolveSession(store, token) : undefined;
 }
 
+function assertTransactionPin(store: MemoryStore, user: User, pin: string) {
+  const credential = store.getTransactionPin(user.id);
+  if (!credential) {
+    throw Object.assign(new Error('Set a transaction PIN before moving money.'), {
+      statusCode: 409,
+      code: 'TRANSACTION_PIN_NOT_CONFIGURED'
+    });
+  }
+  if (credential.lockedUntil && Date.parse(credential.lockedUntil) > Date.now()) {
+    throw Object.assign(new Error('Transaction PIN is temporarily locked. Try again later or contact support.'), {
+      statusCode: 423,
+      code: 'TRANSACTION_PIN_LOCKED'
+    });
+  }
+  if (!verifyHashedTransactionPin(pin, credential.pinHash)) {
+    const failedAttempts = credential.failedAttempts + 1;
+    store.saveTransactionPin({
+      ...credential,
+      failedAttempts,
+      lockedUntil: failedAttempts >= 5 ? new Date(Date.now() + 15 * 60_000).toISOString() : undefined,
+      updatedAt: new Date().toISOString()
+    });
+    throw Object.assign(new Error(user.mode === 'DEMO' ? 'The demo transaction PIN is 1234.' : 'The transaction PIN is incorrect.'), {
+      statusCode: 401,
+      code: 'INVALID_TRANSACTION_PIN'
+    });
+  }
+  if (credential.failedAttempts || credential.lockedUntil) {
+    store.saveTransactionPin({ ...credential, failedAttempts: 0, lockedUntil: undefined, updatedAt: new Date().toISOString() });
+  }
+}
+
 function requiredWallet(store: MemoryStore, userId: string, mode: Mode) {
   const wallet = store.listWallets(userId, mode).find((item) => item.asset === 'NGN');
   if (!wallet) throw Object.assign(new Error('NGN wallet is unavailable.'), { statusCode: 409, code: 'WALLET_NOT_FOUND' });
@@ -1389,7 +1510,37 @@ function marketState(mode: Mode) {
 }
 
 function statusPayload(environment: string, store: MemoryStore) {
-  return { ok: true, appRunning: true, service: 'memezo-api', environment, modeIsolation: true, database: 'IN_MEMORY_DEVELOPMENT', providers: providerStateMap(store), paperBroker: { status: 'AVAILABLE', mode: 'DEMO' }, liveTrading: { enabled: false, reason: 'Audited custody and execution adapters are not configured.' }, features: config.flags };
+  const databaseStatus = config.infrastructure.postgresConfigured
+    ? { status: 'CONFIGURED_NOT_VERIFIED', durable: true }
+    : { status: environment === 'production' ? 'MISSING' : 'IN_MEMORY_DEMO', durable: false };
+  const redisStatus = config.infrastructure.redisConfigured
+    ? { status: 'CONFIGURED_NOT_VERIFIED', durable: false }
+    : { status: environment === 'production' ? 'MISSING' : 'NOT_REQUIRED_FOR_DEMO', durable: false };
+  const launchBlockers = [
+    !config.infrastructure.postgresConfigured ? 'PostgreSQL is not configured.' : '',
+    !config.infrastructure.redisConfigured ? 'Redis is not configured.' : '',
+    !providerFamilyReady(store, 'custody') ? 'Custody provider is not connected.' : '',
+    !providerFamilyReady(store, 'trading') ? 'Trading provider is not connected.' : ''
+  ].filter(Boolean);
+  return {
+    ok: environment !== 'production' || launchBlockers.length === 0,
+    appRunning: true,
+    service: 'memezo-api',
+    environment,
+    modeIsolation: true,
+    database: databaseStatus,
+    redis: redisStatus,
+    queues: { status: config.infrastructure.postgresConfigured ? 'SCHEMA_READY' : 'MEMORY_ONLY', durable: config.infrastructure.postgresConfigured },
+    reconciliation: { status: config.infrastructure.postgresConfigured ? 'SCHEMA_READY' : 'NOT_DURABLE' },
+    providers: providerStateMap(store),
+    paperBroker: { status: 'AVAILABLE', mode: 'DEMO' },
+    liveTrading: {
+      enabled: false,
+      reason: launchBlockers.length ? launchBlockers.join(' ') : 'Live activation still requires external audit and an explicit release approval.'
+    },
+    launchBlockers,
+    features: config.flags
+  };
 }
 
 function providerStateMap(store: MemoryStore): Record<string, ProviderConfig & { secret: string }> {
@@ -1476,7 +1627,7 @@ function assetScale(asset: string) { return asset === 'NGN' ? 100 : 1_000_000; }
 function assetMinor(asset: string, value: number) { return BigInt(Math.round(value * assetScale(asset))); }
 function assetUnits(asset: string, value: bigint) { return Number(value) / assetScale(asset); }
 function assetRateNgn(asset: string) {
-  const rates: Record<string, number> = { NGN: 1, USDT: 1570, USDC: 1572, BTC: 109_083_333, ETH: 618_710, SOL: 246_406, BNB: 99_524, TRX: 230, POL: 363, TON: 3748 };
+  const rates: Record<string, number> = { NGN: 1, USDT: 1570, USDC: 1572, BTC: 109_083_333, ETH: 618_710, SOL: 246_406, BNB: 99_524, TRX: 230, XRP: 915, DOGE: 244, POL: 363, TON: 3748 };
   return rates[asset] || 0;
 }
 function buildSwapQuote(fromAsset: string, toAsset: string, amount: number, slippagePercent: number, mode: Mode) {
@@ -1523,7 +1674,9 @@ function defaultAssetPolicies(): AssetPolicy[] {
     { symbol: 'ETH', name: 'Ethereum', enabled: true, deposits: true, withdrawals: true, swaps: true, networks: ['Ethereum', 'Base', 'Arbitrum', 'Optimism'] },
     { symbol: 'SOL', name: 'Solana', enabled: true, deposits: true, withdrawals: true, swaps: true, networks: ['Solana'] },
     { symbol: 'BNB', name: 'BNB', enabled: true, deposits: true, withdrawals: true, swaps: true, networks: ['BNB Chain'] },
-    { symbol: 'TRX', name: 'TRON', enabled: false, deposits: false, withdrawals: false, swaps: false, networks: ['Tron'] },
+    { symbol: 'TRX', name: 'TRON', enabled: true, deposits: true, withdrawals: true, swaps: true, networks: ['Tron'] },
+    { symbol: 'XRP', name: 'XRP', enabled: true, deposits: true, withdrawals: true, swaps: true, networks: ['XRP Ledger'] },
+    { symbol: 'DOGE', name: 'Dogecoin', enabled: true, deposits: true, withdrawals: true, swaps: true, networks: ['Dogecoin'] },
     { symbol: 'POL', name: 'Polygon', enabled: false, deposits: false, withdrawals: false, swaps: false, networks: ['Polygon'] },
     { symbol: 'TON', name: 'Toncoin', enabled: false, deposits: false, withdrawals: false, swaps: false, networks: ['TON'] }
   ];
@@ -1558,6 +1711,8 @@ function parseWhatsappCommand(input: string): WhatsappCommandLog['command'] {
   if (/\b(balance|wallet balance)\b/.test(text)) return 'BALANCE';
   if (/\b(account number|bank account|account details)\b/.test(text)) return 'ACCOUNT';
   if (/\b(transactions|history|receipt)\b/.test(text)) return 'TRANSACTIONS';
+  if (/\b(savings|saving balance|savings status)\b/.test(text)) return 'SAVINGS';
+  if (/\b(approvals|pending approval|approve transfer)\b/.test(text)) return 'APPROVALS';
   if (/\b(orders|pending order|p2p)\b/.test(text)) return 'ORDERS';
   if (/\bpause auto ?pay\b/.test(text)) return 'PAUSE_AUTO_PAY';
   if (/\bresume auto ?pay\b/.test(text)) return 'RESUME_AUTO_PAY';

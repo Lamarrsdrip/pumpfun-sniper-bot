@@ -1,6 +1,8 @@
 import type { StoreState } from './types.js';
+import { hashTransactionPin } from './security.js';
 
 const now = '2026-06-05T18:00:00.000Z';
+const demoPinHash = hashTransactionPin('1234');
 
 export function seedDemoData(): StoreState {
   return {
@@ -118,6 +120,14 @@ export function seedDemoData(): StoreState {
     trades: [],
     positions: [],
     sessions: [],
-    credentials: []
+    credentials: [],
+    transactionPins: [
+      { userId: 'demo-user-ada', pinHash: demoPinHash, failedAttempts: 0, updatedAt: now },
+      { userId: 'demo-user-tobi', pinHash: demoPinHash, failedAttempts: 0, updatedAt: now },
+      { userId: 'demo-user-zainab', pinHash: demoPinHash, failedAttempts: 0, updatedAt: now }
+    ],
+    trustedDevices: [
+      { id: 'device-demo-ada', userId: 'demo-user-ada', deviceId: 'demo-device', name: 'Expo Demo Device', trustedAt: now }
+    ]
   };
 }

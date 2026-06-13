@@ -17,6 +17,8 @@ export const demoAssets: DemoAsset[] = [
   { symbol: 'SOL', name: 'Solana', balance: 0.128, value: 31540, change: 4.82, color: '#A989FF', networks: ['Solana'] },
   { symbol: 'BNB', name: 'BNB', balance: 0.084, value: 8360, change: 1.46, color: '#F3BA2F', networks: ['BNB Chain'] },
   { symbol: 'TRX', name: 'TRON', balance: 82.4, value: 18940, change: 0.63, color: '#FF4B55', networks: ['Tron'] },
+  { symbol: 'XRP', name: 'XRP', balance: 0, value: 0, change: 1.18, color: '#8AA4B7', networks: ['XRP Ledger'] },
+  { symbol: 'DOGE', name: 'Dogecoin', balance: 0, value: 0, change: 2.76, color: '#C3A634', networks: ['Dogecoin'] },
   { symbol: 'POL', name: 'Polygon', balance: 42.8, value: 15540, change: 3.02, color: '#8247E5', networks: ['Polygon'] },
   { symbol: 'TON', name: 'Toncoin', balance: 3.18, value: 11920, change: -1.12, color: '#0098EA', networks: ['TON'] }
 ];
@@ -30,7 +32,9 @@ export const supportedNetworks = [
   { name: 'Polygon', symbol: 'POL', color: '#8247E5' },
   { name: 'Base', symbol: 'BASE', color: '#4C78FF' },
   { name: 'Arbitrum', symbol: 'ARB', color: '#57A8E5' },
-  { name: 'Optimism', symbol: 'OP', color: '#FF4B55' }
+  { name: 'Optimism', symbol: 'OP', color: '#FF4B55' },
+  { name: 'XRP Ledger', symbol: 'XRP', color: '#8AA4B7' },
+  { name: 'Dogecoin', symbol: 'DOGE', color: '#C3A634' }
 ];
 
 export const demoTokens = [
@@ -57,8 +61,8 @@ export const demoNotifications = [
 ];
 
 export const demoRecipients = [
-  { name: 'Tobi', bank: 'MemeZo', initials: 'TA', color: '#25D995' },
-  { name: 'Zainab', bank: 'MemeZo', initials: 'ZM', color: '#B49AFF' }
+  { id: 'demo-user-tobi', name: 'Tobi Adeyemi', tag: '@tobi', bank: 'MemeZo', initials: 'TA', color: '#25D995', favorite: true },
+  { id: 'demo-user-zainab', name: 'Zainab Musa', tag: '@zainab', bank: 'MemeZo', initials: 'ZM', color: '#B49AFF', favorite: true }
 ];
 
 export const demoPosts = [

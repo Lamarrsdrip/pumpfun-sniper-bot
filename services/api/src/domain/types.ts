@@ -265,7 +265,7 @@ export type WhatsappCommandLog = {
   connectionId: string;
   userId: string;
   mode: Mode;
-  command: 'BALANCE' | 'ACCOUNT' | 'PAYMENT' | 'BILL' | 'TRANSACTIONS' | 'SUPPORT' | 'ORDERS' | 'PAUSE_AUTO_PAY' | 'RESUME_AUTO_PAY' | 'UNKNOWN';
+  command: 'BALANCE' | 'ACCOUNT' | 'PAYMENT' | 'BILL' | 'TRANSACTIONS' | 'SAVINGS' | 'APPROVALS' | 'SUPPORT' | 'ORDERS' | 'PAUSE_AUTO_PAY' | 'RESUME_AUTO_PAY' | 'UNKNOWN';
   input: string;
   result: string;
   approvalSessionId?: string;
@@ -359,6 +359,19 @@ export type StoreState = {
   whatsappTemplates: WhatsappTemplate[];
   trades: Trade[];
   positions: Position[];
-  sessions: Array<{ id: string; userId: string; tokenHash: string; expiresAt: string; revokedAt?: string }>;
+  sessions: Array<{
+    id: string;
+    userId: string;
+    tokenHash: string;
+    deviceId?: string;
+    deviceName?: string;
+    ipAddress?: string;
+    createdAt: string;
+    lastRotatedAt: string;
+    expiresAt: string;
+    revokedAt?: string;
+  }>;
   credentials: Array<{ userId: string; passwordHash: string }>;
+  transactionPins: Array<{ userId: string; pinHash: string; failedAttempts: number; lockedUntil?: string; updatedAt: string }>;
+  trustedDevices: Array<{ id: string; userId: string; deviceId: string; name: string; trustedAt: string; revokedAt?: string }>;
 };

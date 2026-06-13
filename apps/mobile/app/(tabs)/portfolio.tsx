@@ -12,19 +12,36 @@ import { api } from '@/api';
 
 export default function WalletScreen() {
   const [account, setAccount] = useState<{ bankName: string; accountName: string; accountNumber: string } | null>(null);
+  const [walletAssets, setWalletAssets] = useState(demoAssets);
+  const [assetsError, setAssetsError] = useState('');
   const [copyMessage, setCopyMessage] = useState('');
   const { enabledAssets, balancesVisible, setBalancesVisible } = useSession();
-  useEffect(() => { api<{ account: { bankName: string; accountName: string; accountNumber: string } }>('/v1/virtual-account').then((value) => setAccount(value.account)).catch(() => setAccount(null)); }, []);
-  const assets = demoAssets.filter((asset) => enabledAssets.includes(asset.symbol));
+  useEffect(() => {
+    api<{ account: { bankName: string; accountName: string; accountNumber: string } }>('/v1/virtual-account').then((value) => setAccount(value.account)).catch(() => setAccount(null));
+    api<{ assets: Array<{ symbol: string; name: string; balance: number; valueNgn: string; networks: string[] }> }>('/v1/wallet/assets')
+      .then((result) => {
+        setWalletAssets(result.assets.map((asset) => ({
+          ...asset,
+          value: Number(asset.valueNgn),
+          change: demoAssets.find((item) => item.symbol === asset.symbol)?.change || 0,
+          color: demoAssets.find((item) => item.symbol === asset.symbol)?.color || dark.green
+        })));
+        setAssetsError('');
+      })
+      .catch(() => setAssetsError('Wallet balances could not be refreshed. The last labelled Demo values remain visible.'));
+  }, []);
+  const assets = walletAssets.filter((asset) => enabledAssets.includes(asset.symbol));
+  const totalValue = assets.reduce((sum, asset) => sum + asset.value, 0);
   return <ScrollView style={{ flex: 1, backgroundColor: dark.background }} contentContainerStyle={{ padding: 16, gap: 15, paddingBottom: 54 }} contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
     <AppHeader greeting="MemeZo Wallet" title="Money across every network" onNotifications={() => router.push('/notifications')} onProfile={() => router.push('/profile')} unread={2} />
     <ModePill compact />
     <LinearGradient colors={['#152E23', '#0D1B15']} style={{ padding: 19, borderRadius: 18, borderWidth: 1, borderColor: '#345848', gap: 6, boxShadow: depth.raised }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: dark.mutedStrong }}>Total wallet value</Text><Pressable onPress={() => setBalancesVisible(!balancesVisible)}><Ionicons name={balancesVisible ? 'eye-outline' : 'eye-off-outline'} color={dark.textSoft} size={20} /></Pressable></View>
-      <Text selectable style={{ color: dark.text, fontSize: 34, fontWeight: '900', fontVariant: ['tabular-nums'] }}>{balancesVisible ? '₦500,000.00' : '₦••••••••'}</Text>
-      <Text style={{ color: dark.green, fontWeight: '900' }}>{balancesVisible ? '+₦21,640 all time · +4.52%' : 'Performance hidden'}</Text>
+      <Text selectable style={{ color: dark.text, fontSize: 34, fontWeight: '900', fontVariant: ['tabular-nums'] }}>{balancesVisible ? `₦${totalValue.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₦••••••••'}</Text>
+      <Text style={{ color: dark.green, fontWeight: '900' }}>{balancesVisible ? 'Available across enabled assets' : 'Performance hidden'}</Text>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: 14 }}><IconButton icon="add" label="Deposit" onPress={() => router.push('/deposit')} /><IconButton icon="send" label="Send" onPress={() => router.push('/memezo-transfer')} color={dark.cyan} /><IconButton icon="swap-horizontal" label="Swap" onPress={() => router.push('/swap')} color={dark.purple} /><IconButton icon="qr-code-outline" label="Receive" onPress={() => router.push('/crypto-deposit')} color={dark.yellow} /></View>
     </LinearGradient>
+    {assetsError ? <ProviderNotice title="Wallet refresh delayed" body={assetsError} /> : null}
     <View style={{ padding: 15, borderRadius: 14, backgroundColor: dark.surface, borderWidth: 1, borderColor: dark.border, gap: 8 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: dark.muted, fontSize: 10, fontWeight: '900' }}>YOUR NAIRA ACCOUNT</Text><StatusPill label={account ? 'ACTIVE' : 'UNAVAILABLE'} tone={account ? 'success' : 'warning'} /></View>
       {account ? <><Text selectable style={{ color: dark.text, fontSize: 24, fontWeight: '900', fontVariant: ['tabular-nums'] }}>{account.accountNumber}</Text><Text style={{ color: dark.muted, fontSize: 11 }}>{account.bankName} · {account.accountName}</Text><Pressable onPress={async () => { await Clipboard.setStringAsync(account.accountNumber); setCopyMessage('Account number copied'); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 4 }}><Ionicons name="copy-outline" color={dark.cyan} size={16} /><Text style={{ color: dark.cyan, fontWeight: '900' }}>Copy account number</Text></Pressable></> : <ProviderNotice body="Start the MemeZo API for Demo account details. Live virtual accounts require an enabled payment provider." />}

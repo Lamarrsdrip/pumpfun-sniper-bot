@@ -21,7 +21,7 @@ export const useSession = create<SessionState>((set) => ({
   mode: 'DEMO',
   balancesVisible: true,
   theme: 'DARK',
-  enabledAssets: ['NGN', 'USDT', 'USDC', 'BTC', 'ETH', 'SOL', 'BNB'],
+  enabledAssets: ['NGN', 'USDT', 'USDC', 'BTC', 'ETH', 'SOL', 'BNB', 'TRX', 'XRP', 'DOGE'],
   setAuthenticated: (authenticated) => set({ authenticated }),
   setProfileComplete: (profileComplete) => set({ profileComplete }),
   setMode: (mode) => set({ mode }),

@@ -45,6 +45,24 @@ ipconfig getifaddr en1
 
 The API health page is [http://127.0.0.1:8790/api/status](http://127.0.0.1:8790/api/status).
 
+## Remote Expo Preview
+
+For a reviewer outside your Wi-Fi, use temporary tunnels:
+
+```bash
+# Terminal 1: API
+API_PORT=3000 npm run dev --workspace @nairameme/api
+
+# Terminal 2: public API tunnel
+cloudflared tunnel --url http://127.0.0.1:3000 --no-autoupdate
+
+# Terminal 3: replace URL with the cloudflared HTTPS address
+cd apps/mobile
+EXPO_PUBLIC_API_URL=https://YOUR-TUNNEL.trycloudflare.com npx expo start --tunnel --clear
+```
+
+Send the reviewer the `exp://...exp.direct` URL or Expo QR code. The tunnel works only while all three Terminal processes and the Mac remain online. Do not use this temporary tunnel for production money movement.
+
 ## New Platform Structure
 
 ```text
@@ -109,6 +127,8 @@ The following remain disabled until configured and approved:
 - Auto Sniper live mode
 - Copy trading
 - Bulk email/push delivery
+
+The V3 production schema, migration, row-lock helpers, queue/reconciliation models, PIN hashing, session rotation, webhook verification, Redis adapter, and Mission Control readiness API are implemented. Existing product flows still need to be migrated from the in-memory demo repository to PostgreSQL before real-money launch. Read [PRODUCTION_GAP_ANALYSIS.md](PRODUCTION_GAP_ANALYSIS.md) and [LAUNCH_BLOCKERS.md](LAUNCH_BLOCKERS.md).
 
 ## What Works In This Slice
 

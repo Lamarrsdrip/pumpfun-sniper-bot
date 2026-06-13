@@ -11,6 +11,14 @@ export const config = {
   secretManager: process.env.SECRET_MANAGER_PROVIDER || '',
   providerVaultKey: process.env.FIELD_ENCRYPTION_KEY || '',
   providerVaultPath: process.env.PROVIDER_SECRETS_PATH || 'data/provider-secrets.enc',
+  infrastructure: {
+    persistenceMode: process.env.PERSISTENCE_MODE || 'memory',
+    databaseUrl: process.env.DATABASE_URL || '',
+    redisUrl: process.env.REDIS_URL || '',
+    postgresConfigured: Boolean(process.env.DATABASE_URL),
+    redisConfigured: Boolean(process.env.REDIS_URL),
+    requireDurableRuntime: process.env.REQUIRE_DURABLE_RUNTIME === 'true' || process.env.NODE_ENV === 'production'
+  },
   providers: {
     identity: Boolean(process.env.AUTH_PROVIDER_SECRET),
     payments: Boolean(process.env.PAYMENT_PROVIDER_SECRET),

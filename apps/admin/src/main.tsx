@@ -20,12 +20,35 @@ type AssetPolicy = { symbol: string; name: string; enabled: boolean; deposits: b
 type RewardPolicy = { enabled: boolean; referralRewardNgn: number; refereeRewardNgn: number; billCashbackPercent: number; cardCashbackPercent: number; tradingRewardPercent: number };
 type WhatsappTemplate = { id: string; name: string; category: string; language: string; status: string; body: string; createdAt: string };
 type Notice = { tone: 'success' | 'warning'; text: string };
+type CommandCenter = {
+  mode: 'DEMO' | 'LIVE';
+  system: {
+    app: string;
+    database: { status: string; durable: boolean };
+    redis: { status: string; durable: boolean };
+    queues: { status: string; durable: boolean };
+    reconciliation: { status: string };
+    launchBlockers: string[];
+  };
+  queues: { kyc: number; deposits: number; withdrawals: number; whatsappApprovals: number; incidents: number };
+  treasury: Array<{ asset: string; available: string; status: string }>;
+  risk: { highRiskTokens: number; failedTrades: number; unverifiedWebhookEvents: number };
+  providers: Record<string, Provider>;
+  ai: { strategy: string; enabled: boolean; dailyCreditBudget: number };
+  whatsapp: { connections: number; failedMessages: number; rejectedWebhooks: number };
+};
 
 const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8790';
-const nav = ['Overview', 'Users & KYC', 'Virtual Accounts', 'Deposits', 'Withdrawals', 'AI Payments', 'WhatsApp Assistant', 'P2P Orders', 'Bill Payments', 'Trades', 'Runner AI', 'Auto Sniper', 'Copy Trading', 'Assets & Networks', 'Rewards', 'Campaign Center', 'Providers & API Keys', 'Fees & Limits', 'Audit Log', 'Incidents', 'Launch Checklist'];
+const navGroups = [
+  { label: 'Mission control', items: ['Overview', 'Launch Checklist', 'Incidents', 'Audit Log'] },
+  { label: 'Money operations', items: ['Deposits', 'Withdrawals', 'Virtual Accounts', 'AI Payments', 'P2P Orders', 'Bill Payments', 'Trades'] },
+  { label: 'Customers and risk', items: ['Users & KYC', 'Runner AI', 'Auto Sniper', 'Copy Trading'] },
+  { label: 'Platform', items: ['Providers & API Keys', 'Assets & Networks', 'Fees & Limits', 'Campaign Center', 'WhatsApp Assistant', 'Rewards'] }
+];
 
 async function request<T>(path: string, init: RequestInit = {}, mode: 'DEMO' | 'LIVE' = 'DEMO'): Promise<T> {
-  const response = await fetch(`${apiUrl}${path}`, { ...init, headers: { 'Content-Type': 'application/json', 'X-App-Mode': mode, ...init.headers } });
+  const sessionToken = window.localStorage.getItem('memezo_admin_session') || '';
+  const response = await fetch(`${apiUrl}${path}`, { ...init, headers: { 'Content-Type': 'application/json', 'X-App-Mode': mode, ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}), ...init.headers } });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.message || 'The action could not be completed.');
   return body as T;
@@ -35,22 +58,29 @@ function App() {
   const [selected, setSelected] = useState('Overview');
   const [mode, setMode] = useState<'DEMO' | 'LIVE'>('DEMO');
   const [overview, setOverview] = useState<Overview | null>(null);
+  const [commandCenter, setCommandCenter] = useState<CommandCenter | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
-  const refresh = () => request<Overview>(`/v1/admin/overview?mode=${mode}`, {}, mode).then(setOverview).catch((error) => setNotice({ tone: 'warning', text: error.message }));
+  const refresh = () => Promise.all([
+    request<Overview>(`/v1/admin/overview?mode=${mode}`, {}, mode),
+    request<CommandCenter>(`/v1/admin/command-center?mode=${mode}`, {}, mode)
+  ]).then(([nextOverview, nextCommandCenter]) => {
+    setOverview(nextOverview);
+    setCommandCenter(nextCommandCenter);
+  }).catch((error) => setNotice({ tone: 'warning', text: error.message }));
   useEffect(() => { void refresh(); }, [mode]);
   return <main>
-    <aside><div className="brand"><span>MZ</span><div><strong>MemeZo</strong><small>Business operations</small></div></div><nav>{nav.map((item) => <button key={item} className={selected === item ? 'active' : ''} onClick={() => setSelected(item)}>{item}<ChevronRight /></button>)}</nav></aside>
+    <aside><div className="brand"><span>MZ</span><div><strong>MemeZo</strong><small>Operations control</small></div></div><nav>{navGroups.map((group) => <div className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map((item) => <button key={item} className={selected === item ? 'active' : ''} onClick={() => setSelected(item)}>{item}<ChevronRight /></button>)}</div>)}</nav></aside>
     <section className="content">
       <header><div><p className="eyebrow">{mode} OPERATIONS</p><h1>{selected}</h1><p>Operate users, money movement, markets, providers and controls from one place.</p></div><div className="header-actions"><div className="mode-switch"><button className={mode === 'DEMO' ? 'selected' : ''} onClick={() => setMode('DEMO')}>Demo</button><button className={mode === 'LIVE' ? 'selected live' : ''} onClick={() => setMode('LIVE')}>Live</button></div><button className="danger" onClick={() => request<{ status: string }>('/v1/admin/emergency/trading/pause', { method: 'POST' }, mode).then((result) => setNotice({ tone: 'warning', text: `Trading pause is ${result.status.toLowerCase()} for ${mode}.` })).catch((error) => setNotice({ tone: 'warning', text: error.message }))}><AlertTriangle /> Emergency pause</button></div></header>
       {mode === 'DEMO' && <div className="demo-banner"><ShieldCheck /> Demo operations use sample users and money. Live records remain isolated.</div>}
       {notice && <div className={`notice ${notice.tone}`}><span>{notice.text}</span><button onClick={() => setNotice(null)}>Close</button></div>}
-      <Workspace selected={selected} mode={mode} overview={overview} notice={setNotice} refresh={refresh} />
+      <Workspace selected={selected} mode={mode} overview={overview} commandCenter={commandCenter} notice={setNotice} refresh={refresh} />
     </section>
   </main>;
 }
 
-function Workspace({ selected, mode, overview, notice, refresh }: { selected: string; mode: 'DEMO' | 'LIVE'; overview: Overview | null; notice: (value: Notice) => void; refresh: () => void }) {
-  if (selected === 'Overview') return <OverviewPage data={overview} />;
+function Workspace({ selected, mode, overview, commandCenter, notice, refresh }: { selected: string; mode: 'DEMO' | 'LIVE'; overview: Overview | null; commandCenter: CommandCenter | null; notice: (value: Notice) => void; refresh: () => void }) {
+  if (selected === 'Overview') return <OverviewPage data={overview} commandCenter={commandCenter} />;
   if (selected === 'Users & KYC') return <UsersPage mode={mode} notice={notice} />;
   if (selected === 'Deposits') return <MoneyPage mode={mode} type="DEPOSIT" notice={notice} refresh={refresh} />;
   if (selected === 'Withdrawals') return <MoneyPage mode={mode} type="WITHDRAWAL" notice={notice} refresh={refresh} />;
@@ -74,17 +104,48 @@ function Workspace({ selected, mode, overview, notice, refresh }: { selected: st
   return <OperationalModule name={selected} mode={mode} />;
 }
 
-function OverviewPage({ data }: { data: Overview | null }) {
+function OverviewPage({ data, commandCenter }: { data: Overview | null; commandCenter: CommandCenter | null }) {
   const metrics = [
     ['Total users', data?.users.total || 0, <Users />], ['Active users', data?.users.active || 0, <Activity />],
     ['Deposits today', naira(data?.money.depositsTodayNgn), <Banknote />], ['Withdrawals today', naira(data?.money.withdrawalsTodayNgn), <WalletCards />],
     ['Trading volume', naira(data?.money.tradingVolumeNgn), <Activity />], ['Fees earned', naira(data?.money.revenueTodayNgn), <Banknote />],
     ['Pending approvals', data?.operations.pendingApprovals || 0, <ShieldCheck />], ['Risk alerts', data?.operations.openRiskCases || 0, <AlertTriangle />]
   ] as const;
-  return <><div className="metrics">{metrics.map(([label, value, icon]) => <Metric key={label} label={label} value={value} icon={icon} />)}</div><div className="panel-grid">
-    <Panel title="Provider health" subtitle="Configuration and priority from the backend"><div className="compact-list">{Object.values(data?.providers || {}).slice(0, 8).map((item) => <div className="list-row" key={item.key}><div><strong>{item.displayName}</strong><small>{item.family} · priority {item.priority}</small></div><Badge value={item.status} /></div>)}</div></Panel>
-    <Panel title="System controls" subtitle="The app fails closed when a real provider is missing"><div className="system-state"><CheckCircle2 /><div><strong>Demo ledger operational</strong><p>Deposits, withdrawals, fees and trades are auditable.</p></div></div><div className="system-state warning-state"><AlertTriangle /><div><strong>Live execution disabled</strong><p>Requires production custody, provider webhooks and deployment approval.</p></div></div></Panel>
-  </div></>;
+  const providers = Object.values(commandCenter?.providers || data?.providers || {});
+  const connected = providers.filter((item) => item.status === 'CONNECTED').length;
+  return <>
+    <div className="mission-strip">
+      <div><span className="pulse" /><div><strong>{commandCenter?.system.app || 'LOADING'}</strong><small>API control plane</small></div></div>
+      <div><Badge value={commandCenter?.system.database.status || 'CHECKING'} /><small>PostgreSQL</small></div>
+      <div><Badge value={commandCenter?.system.redis.status || 'CHECKING'} /><small>Redis</small></div>
+      <div><Badge value={commandCenter?.system.queues.status || 'CHECKING'} /><small>Jobs</small></div>
+      <div><strong>{connected}/{providers.length}</strong><small>Providers ready</small></div>
+    </div>
+    <div className="metrics">{metrics.map(([label, value, icon]) => <Metric key={label} label={label} value={value} icon={icon} />)}</div>
+    <div className="operations-grid">
+      <Panel title="Exception queues" subtitle="Work that needs an operator, ordered by urgency"><div className="queue-grid">
+        {[
+          ['KYC review', commandCenter?.queues.kyc || 0],
+          ['Deposits', commandCenter?.queues.deposits || 0],
+          ['Withdrawals', commandCenter?.queues.withdrawals || 0],
+          ['WhatsApp approvals', commandCenter?.queues.whatsappApprovals || 0],
+          ['Active incidents', commandCenter?.queues.incidents || 0]
+        ].map(([label, value]) => <div className="queue-item" key={String(label)}><span>{label}</span><strong>{value}</strong></div>)}
+      </div></Panel>
+      <Panel title="Treasury and liquidity" subtitle="Balances are explicitly marked simulated or unreconciled"><div className="compact-list">{(commandCenter?.treasury || []).slice(0, 6).map((item) => <div className="list-row" key={item.asset}><div><strong>{item.asset}</strong><small>{item.status}</small></div><b>{item.available}</b></div>)}</div></Panel>
+      <Panel title="Risk and reconciliation" subtitle="Failures stay visible until resolved"><div className="compact-list">
+        <RiskLine label="High-risk tokens" value={commandCenter?.risk.highRiskTokens || 0} />
+        <RiskLine label="Failed trades" value={commandCenter?.risk.failedTrades || 0} />
+        <RiskLine label="Unverified webhooks" value={commandCenter?.risk.unverifiedWebhookEvents || 0} />
+        <RiskLine label="Rejected WhatsApp webhooks" value={commandCenter?.whatsapp.rejectedWebhooks || 0} />
+      </div></Panel>
+      <Panel title="Release gates" subtitle="Live money remains blocked until every critical gate is cleared">{commandCenter?.system.launchBlockers.length ? <div className="blocker-list">{commandCenter.system.launchBlockers.map((item) => <div key={item}><AlertTriangle /><span>{item}</span></div>)}</div> : <div className="system-state"><CheckCircle2 /><div><strong>Infrastructure gates configured</strong><p>Independent security approval is still required before activation.</p></div></div>}</Panel>
+    </div>
+  </>;
+}
+
+function RiskLine({ label, value }: { label: string; value: number }) {
+  return <div className="list-row"><span>{label}</span><Badge value={value ? `${value} OPEN` : 'CLEAR'} /></div>;
 }
 
 function UsersPage({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {

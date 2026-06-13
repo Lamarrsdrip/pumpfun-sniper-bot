@@ -14,16 +14,37 @@ export function verifyPassword(password: string, encoded: string) {
   return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
 
-export function issueSession(store: MemoryStore, userId: string) {
+type SessionMetadata = {
+  deviceId?: string;
+  deviceName?: string;
+  ipAddress?: string;
+};
+
+export function issueSession(store: MemoryStore, userId: string, metadata: SessionMetadata = {}) {
   const token = randomBytes(32).toString('base64url');
+  const now = new Date().toISOString();
   const session = {
     id: `ses_${randomUUID()}`,
     userId,
     tokenHash: tokenHash(token),
+    ...metadata,
+    createdAt: now,
+    lastRotatedAt: now,
     expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString()
   };
   store.saveSession(session);
   return { token, session };
+}
+
+export function rotateSession(store: MemoryStore, token: string, metadata: SessionMetadata = {}) {
+  const current = store.findSessionByHash(tokenHash(token));
+  if (!current || current.revokedAt || Date.parse(current.expiresAt) <= Date.now()) return undefined;
+  store.revokeSession(current.id, new Date().toISOString());
+  return issueSession(store, current.userId, {
+    deviceId: metadata.deviceId || current.deviceId,
+    deviceName: metadata.deviceName || current.deviceName,
+    ipAddress: metadata.ipAddress || current.ipAddress
+  });
 }
 
 export function resolveSession(store: MemoryStore, token: string) {
