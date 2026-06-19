@@ -116,7 +116,7 @@ export function BalanceHero({
 }) {
   return (
     <LinearGradient
-      colors={['#16583E', '#0C341F', '#0C1A12']}
+      colors={['#0D2A40', '#091A2E', '#09091A']}
       style={styles.balanceHero}
     >
       <View style={styles.balanceHeroTop}>
@@ -560,111 +560,129 @@ export function AmountDisplay({
 // ─── Styles ──────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: dark.background, padding: spacing.md },
+  screen: { flex: 1, backgroundColor: dark.background },
   page: { flex: 1, backgroundColor: dark.background },
-  pageContent: { paddingHorizontal: spacing.md, paddingTop: spacing.sm, gap: 16, paddingBottom: 60 },
+  pageContent: { paddingHorizontal: 20, paddingTop: 8, gap: 20, paddingBottom: 100 },
 
-  appHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 54, paddingTop: 4 },
-  greeting: { color: dark.muted, fontSize: 12, fontWeight: '600', marginBottom: 1 },
-  pageTitle: { color: dark.text, fontSize: 26, lineHeight: 30, fontWeight: '900' },
-  headerIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: dark.surface, borderWidth: 1, borderColor: dark.border, alignItems: 'center', justifyContent: 'center' },
-  unreadBadge: { position: 'absolute', right: -3, top: -3, minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 3, backgroundColor: dark.red, alignItems: 'center', justifyContent: 'center' },
+  // Header — clean, minimal like Moniepoint
+  appHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
+  greeting: { color: dark.muted, fontSize: 13, fontWeight: '500', marginBottom: 2 },
+  pageTitle: { color: dark.text, fontSize: 22, fontWeight: '800', lineHeight: 28 },
+  headerIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: dark.surface, borderWidth: 1, borderColor: dark.border, alignItems: 'center', justifyContent: 'center' },
+  unreadBadge: { position: 'absolute', right: -2, top: -2, minWidth: 15, height: 15, borderRadius: 8, paddingHorizontal: 3, backgroundColor: dark.red, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: dark.background },
   unreadText: { color: dark.white, fontSize: 8, fontWeight: '900' },
-  avatar: { width: 42, height: 42, borderRadius: 14, backgroundColor: dark.greenSoft, borderWidth: 1, borderColor: `${dark.green}40`, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: dark.green, fontWeight: '900', fontSize: 13 },
+  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: dark.greenSoft, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: dark.green, fontWeight: '800', fontSize: 14 },
 
-  card: { backgroundColor: dark.surface, borderRadius: radius.xl, padding: spacing.md, borderCurve: 'continuous', borderWidth: 1, borderColor: dark.border },
-  cardGreen: { borderColor: '#2D6848', backgroundColor: '#0F2A1C' },
-  cardWarning: { borderColor: '#5E461A', backgroundColor: '#1A1608' },
-  cardDanger: { borderColor: '#5A2830', backgroundColor: '#1E0E12' },
+  // Cards
+  card: { backgroundColor: dark.surface, borderRadius: 16, padding: 18, borderWidth: 1, borderColor: dark.border },
+  cardGreen: { borderColor: `${dark.green}30`, backgroundColor: '#0A1E18' },
+  cardWarning: { borderColor: `${dark.yellow}30`, backgroundColor: '#1A1608' },
+  cardDanger: { borderColor: `${dark.red}30`, backgroundColor: '#1A0A0A' },
 
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: dark.border },
-  infoLabel: { color: dark.muted, fontSize: 12 },
-  infoValue: { color: dark.text, fontWeight: '800', maxWidth: '64%', textAlign: 'right', fontSize: 13 },
+  // Info rows
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: dark.border },
+  infoLabel: { color: dark.muted, fontSize: 13 },
+  infoValue: { color: dark.text, fontWeight: '700', maxWidth: '60%', textAlign: 'right', fontSize: 13 },
 
-  balanceHero: { padding: 20, borderRadius: 20, gap: 5, borderCurve: 'continuous' },
+  // Balance hero — cleaner, darker gradient
+  balanceHero: { padding: 22, borderRadius: 20, gap: 4 },
   balanceHeroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  balanceLabel: { color: '#B0D4C2', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
-  eyeBtn: { padding: 4 },
-  balanceAmount: { color: dark.white, fontSize: 36, fontWeight: '900', fontVariant: ['tabular-nums'], marginTop: 2 },
-  balanceSub: { color: '#85BFAA', fontSize: 13, fontWeight: '700', marginTop: 1 },
-  changeRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
-  changeText: { fontSize: 12, fontWeight: '900' },
-  changePeriod: { color: '#6B9B8A', fontSize: 11, fontWeight: '600' },
-  heroActions: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 18 },
+  balanceLabel: { color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: '500', letterSpacing: 0.2 },
+  eyeBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
+  balanceAmount: { color: dark.white, fontSize: 38, fontWeight: '800', fontVariant: ['tabular-nums'], marginTop: 8, letterSpacing: -0.5 },
+  balanceSub: { color: 'rgba(255,255,255,0.45)', fontSize: 13, fontWeight: '500', marginTop: 2 },
+  changeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  changeText: { fontSize: 13, fontWeight: '700' },
+  changePeriod: { color: 'rgba(255,255,255,0.4)', fontSize: 12 },
+  heroActions: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 22, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)', marginTop: 18 },
 
-  button: { minHeight: 52, borderRadius: 14, backgroundColor: dark.greenDeep, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.md, flexDirection: 'row', gap: 8, borderCurve: 'continuous' },
+  // Buttons — pill for primary, clean for others
+  button: { minHeight: 54, borderRadius: 14, backgroundColor: dark.green, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, flexDirection: 'row', gap: 8 },
   buttonSecondary: { backgroundColor: dark.surfaceRaised, borderWidth: 1, borderColor: dark.borderStrong },
-  buttonDanger: { backgroundColor: '#9B2636' },
-  buttonGhost: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: `${dark.green}50` },
+  buttonDanger: { backgroundColor: dark.red },
+  buttonGhost: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: `${dark.green}40` },
   buttonOutline: { backgroundColor: 'transparent', borderWidth: 1, borderColor: dark.border },
-  buttonText: { color: dark.white, fontSize: 15, fontWeight: '900' },
-  disabled: { opacity: 0.38 },
+  buttonText: { color: dark.white, fontSize: 16, fontWeight: '700' },
+  disabled: { opacity: 0.4 },
 
-  iconAction: { flex: 1, alignItems: 'center', gap: 6, minWidth: 58 },
+  // Icon action buttons — cleaner, rounder
+  iconAction: { flex: 1, alignItems: 'center', gap: 8 },
   iconCircleWrap: { position: 'relative' },
-  iconCircle: { width: 50, height: 50, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  iconBadge: { position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 3, backgroundColor: dark.red, alignItems: 'center', justifyContent: 'center' },
+  iconCircle: { width: 52, height: 52, borderRadius: 26, borderWidth: 0, alignItems: 'center', justifyContent: 'center' },
+  iconBadge: { position: 'absolute', top: -3, right: -3, minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 3, backgroundColor: dark.red, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: dark.background },
   iconBadgeText: { color: dark.white, fontSize: 8, fontWeight: '900' },
-  iconLabel: { color: dark.textSoft, fontSize: 11, fontWeight: '800', textAlign: 'center' },
+  iconLabel: { color: dark.textSoft, fontSize: 11, fontWeight: '600', textAlign: 'center' },
 
-  sectionHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingTop: 4 },
-  sectionTitle: { color: dark.text, fontSize: 18, fontWeight: '900' },
-  sectionCaption: { color: dark.muted, fontSize: 11, marginTop: 2 },
-  sectionAction: { color: dark.green, fontSize: 13, fontWeight: '900', paddingTop: 3 },
+  // Section headers
+  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sectionTitle: { color: dark.text, fontSize: 16, fontWeight: '700' },
+  sectionCaption: { color: dark.muted, fontSize: 11, marginTop: 1 },
+  sectionAction: { color: dark.green, fontSize: 13, fontWeight: '700' },
 
-  mode: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 99, backgroundColor: '#282010', borderWidth: 1, borderColor: '#4A3B18' },
+  // Mode pill
+  mode: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99, backgroundColor: 'rgba(251,191,36,0.08)', borderWidth: 1, borderColor: 'rgba(251,191,36,0.2)' },
   modeDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: dark.yellow },
-  modeText: { color: dark.yellow, fontSize: 9, fontWeight: '900', letterSpacing: 0.4 },
+  modeText: { color: dark.yellow, fontSize: 10, fontWeight: '700', letterSpacing: 0.2 },
 
-  statusPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 99, borderWidth: 1 },
-  statusText: { fontSize: 9, fontWeight: '900', letterSpacing: 0.3 },
+  // Status pill
+  statusPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
+  statusText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.1 },
 
-  providerNotice: { flexDirection: 'row', gap: 11, padding: 13, borderRadius: 12, borderWidth: 1, borderColor: '#4C3D18', backgroundColor: '#161108', alignItems: 'flex-start' },
-  providerTitle: { color: dark.yellow, fontWeight: '900', fontSize: 12 },
-  providerBody: { color: dark.mutedStrong, fontSize: 11, lineHeight: 17, paddingTop: 2 },
+  // Provider notice
+  providerNotice: { flexDirection: 'row', gap: 11, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: `${dark.yellow}25`, backgroundColor: `${dark.yellow}08`, alignItems: 'flex-start' },
+  providerTitle: { color: dark.yellow, fontWeight: '700', fontSize: 13 },
+  providerBody: { color: dark.mutedStrong, fontSize: 12, lineHeight: 18, paddingTop: 2 },
 
+  // Asset icon
   assetIcon: { borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  assetText: { fontWeight: '900' },
+  assetText: { fontWeight: '800' },
 
-  txRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: dark.border },
-  txIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  txTitle: { color: dark.text, fontSize: 13, fontWeight: '900' },
-  txDetail: { color: dark.muted, fontSize: 10, paddingTop: 2 },
+  // Transaction rows — clean Moniepoint style
+  txRow: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: dark.border },
+  txIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  txTitle: { color: dark.text, fontSize: 14, fontWeight: '600' },
+  txDetail: { color: dark.muted, fontSize: 12, paddingTop: 1 },
   txDot: { width: 5, height: 5, borderRadius: 3 },
-  txStatus: { fontSize: 9, fontWeight: '900', letterSpacing: 0.3 },
-  txAmount: { fontSize: 13, fontWeight: '900', fontVariant: ['tabular-nums'], textAlign: 'right' },
+  txStatus: { fontSize: 10, fontWeight: '700', letterSpacing: 0.1 },
+  txAmount: { fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'], textAlign: 'right' },
 
-  empty: { minHeight: 180, alignItems: 'center', justifyContent: 'center', padding: spacing.lg, gap: 10 },
-  emptyIcon: { width: 56, height: 56, borderRadius: 18, backgroundColor: dark.greenSoft, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  emptyTitle: { color: dark.text, fontSize: 17, fontWeight: '900', textAlign: 'center' },
-  emptyBody: { color: dark.muted, fontSize: 13, lineHeight: 20, textAlign: 'center', maxWidth: 260 },
-  emptyAction: { marginTop: 8, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 99, borderWidth: 1, borderColor: dark.green },
-  emptyActionText: { color: dark.green, fontWeight: '900', fontSize: 13 },
+  // Empty state
+  empty: { minHeight: 200, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
+  emptyIcon: { width: 60, height: 60, borderRadius: 30, backgroundColor: dark.greenSoft, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  emptyTitle: { color: dark.text, fontSize: 17, fontWeight: '700', textAlign: 'center' },
+  emptyBody: { color: dark.muted, fontSize: 14, lineHeight: 21, textAlign: 'center', maxWidth: 260 },
+  emptyAction: { marginTop: 4, paddingHorizontal: 22, paddingVertical: 11, borderRadius: 99, backgroundColor: dark.greenSoft, borderWidth: 1, borderColor: `${dark.green}40` },
+  emptyActionText: { color: dark.green, fontWeight: '700', fontSize: 14 },
 
-  formGroup: { gap: 6 },
-  formLabel: { color: dark.mutedStrong, fontSize: 12, fontWeight: '700' },
-  inputWrap: { flexDirection: 'row', alignItems: 'center', minHeight: 52, borderWidth: 1, borderColor: dark.border, backgroundColor: dark.surface, borderRadius: 12, paddingHorizontal: 14 },
+  // Form inputs
+  formGroup: { gap: 8 },
+  formLabel: { color: dark.textSoft, fontSize: 13, fontWeight: '600' },
+  inputWrap: { flexDirection: 'row', alignItems: 'center', minHeight: 54, borderWidth: 1, borderColor: dark.border, backgroundColor: dark.surface, borderRadius: 12, paddingHorizontal: 16 },
   inputError: { borderColor: dark.red },
-  inputPrefix: { color: dark.muted, fontSize: 15, marginRight: 6 },
-  input: { flex: 1, color: dark.text, fontSize: 15, paddingVertical: 10 },
-  fieldError: { color: dark.red, fontSize: 11, marginTop: 2 },
-  fieldHint: { color: dark.muted, fontSize: 11, marginTop: 2, lineHeight: 16 },
+  inputPrefix: { color: dark.muted, fontSize: 16, marginRight: 6 },
+  input: { flex: 1, color: dark.text, fontSize: 15, paddingVertical: 12 },
+  fieldError: { color: dark.red, fontSize: 12, marginTop: 2 },
+  fieldHint: { color: dark.muted, fontSize: 12, marginTop: 2, lineHeight: 17 },
 
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)' },
-  sheet: { backgroundColor: dark.backgroundRaised, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, gap: 12 },
-  sheetHandle: { width: 38, height: 4, borderRadius: 2, backgroundColor: dark.border, alignSelf: 'center', marginBottom: 12 },
-  sheetTitle: { color: dark.text, fontSize: 20, fontWeight: '900' },
-  sheetBody: { color: dark.muted, fontSize: 14, lineHeight: 21 },
+  // Bottom sheet
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)' },
+  sheet: { backgroundColor: dark.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 44, gap: 14, borderTopWidth: 1, borderTopColor: dark.border },
+  sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: dark.border, alignSelf: 'center', marginBottom: 8 },
+  sheetTitle: { color: dark.text, fontSize: 20, fontWeight: '800' },
+  sheetBody: { color: dark.muted, fontSize: 14, lineHeight: 22 },
 
-  receipt: { backgroundColor: dark.surface, borderRadius: 18, padding: 18, borderWidth: 1, gap: 0 },
-  receiptTitle: { fontSize: 17, fontWeight: '900' },
+  // Receipt
+  receipt: { backgroundColor: dark.surface, borderRadius: 18, padding: 20, borderWidth: 1, gap: 0 },
+  receiptTitle: { fontSize: 18, fontWeight: '800' },
 
-  notice: { flexDirection: 'row', gap: 10, padding: 13, borderRadius: 12, borderWidth: 1, alignItems: 'flex-start' },
-  noticeTitle: { fontWeight: '900', fontSize: 12, marginBottom: 2 },
-  noticeBody: { color: dark.mutedStrong, fontSize: 11, lineHeight: 17 },
+  // Notice banner
+  notice: { flexDirection: 'row', gap: 10, padding: 14, borderRadius: 12, borderWidth: 1, alignItems: 'flex-start' },
+  noticeTitle: { fontWeight: '700', fontSize: 13, marginBottom: 2 },
+  noticeBody: { color: dark.mutedStrong, fontSize: 12, lineHeight: 18 },
 
-  trust: { flexDirection: 'row', justifyContent: 'center', gap: 16, paddingVertical: 4 },
+  // Trust stripe
+  trust: { flexDirection: 'row', justifyContent: 'center', gap: 18, paddingVertical: 8 },
   trustItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  trustText: { color: dark.muted, fontSize: 10, fontWeight: '700' },
+  trustText: { color: dark.muted, fontSize: 11, fontWeight: '600' },
 });
