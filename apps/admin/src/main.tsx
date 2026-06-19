@@ -18,6 +18,10 @@ type BotControl = { userId: string; name: string; settings: { active: boolean; r
 type CopyTrader = { userId: string; name: string; enabled: boolean; riskRating: 'LOW' | 'MEDIUM' | 'HIGH'; trades: number; winRate: number; copiedVolumeNgn: string; reviewedAt?: string };
 type AssetPolicy = { symbol: string; name: string; enabled: boolean; deposits: boolean; withdrawals: boolean; swaps: boolean; networks: string[] };
 type RewardPolicy = { enabled: boolean; referralRewardNgn: number; refereeRewardNgn: number; billCashbackPercent: number; cardCashbackPercent: number; tradingRewardPercent: number };
+type SupportTicket = { id: string; userId: string; userName: string; subject: string; body: string; category: string; status: string; priority: string; reply?: string; createdAt: string; updatedAt: string };
+type PlanSubscription = { id: string; userId: string; userName: string; email: string; plan: string; status: string; startedAt: string; expiresAt?: string; source: string };
+type Referral = { id: string; referrerId: string; referrerName: string; refereeId: string; refereeName: string; status: string; rewardPaidNgn: string; createdAt: string };
+type WalletAdjustment = { userId: string; amount: number; direction: 'CREDIT' | 'DEBIT'; reason: string; reference: string };
 type WhatsappTemplate = { id: string; name: string; category: string; language: string; status: string; body: string; createdAt: string };
 type Notice = { tone: 'success' | 'warning'; text: string };
 type CommandCenter = {
@@ -41,8 +45,8 @@ type CommandCenter = {
 const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8790';
 const navGroups = [
   { label: 'Mission control', items: ['Overview', 'Launch Checklist', 'Incidents', 'Audit Log'] },
-  { label: 'Money operations', items: ['Deposits', 'Withdrawals', 'Virtual Accounts', 'AI Payments', 'P2P Orders', 'Bill Payments', 'Trades'] },
-  { label: 'Customers and risk', items: ['Users & KYC', 'Runner AI', 'Auto Sniper', 'Copy Trading'] },
+  { label: 'Money operations', items: ['Deposits', 'Withdrawals', 'Manual Adjustments', 'Virtual Accounts', 'AI Payments', 'P2P Orders', 'Bill Payments', 'Trades'] },
+  { label: 'Customers and risk', items: ['Users & KYC', 'Plans & Subscriptions', 'Referrals', 'Support Tickets', 'Runner AI', 'Auto Sniper', 'Copy Trading'] },
   { label: 'Platform', items: ['Providers & API Keys', 'Assets & Networks', 'Fees & Limits', 'Campaign Center', 'WhatsApp Assistant', 'Rewards'] }
 ];
 
@@ -101,6 +105,10 @@ function Workspace({ selected, mode, overview, commandCenter, notice, refresh }:
   if (selected === 'Incidents') return <IncidentsPage mode={mode} notice={notice} />;
   if (selected === 'Launch Checklist') return <LaunchChecklist overview={overview} />;
   if (selected === 'Audit Log') return <AuditPage mode={mode} />;
+  if (selected === 'Manual Adjustments') return <ManualAdjustments mode={mode} notice={notice} />;
+  if (selected === 'Plans & Subscriptions') return <PlansAdmin mode={mode} notice={notice} />;
+  if (selected === 'Referrals') return <ReferralsAdmin mode={mode} notice={notice} />;
+  if (selected === 'Support Tickets') return <SupportTickets mode={mode} notice={notice} />;
   return <OperationalModule name={selected} mode={mode} />;
 }
 
@@ -375,6 +383,242 @@ function LaunchChecklist({ overview }: { overview: Overview | null }) {
 function AuditPage({ mode }: { mode: 'DEMO' | 'LIVE' }) {
   const [events, setEvents] = useState<Audit[]>([]); useEffect(() => { request<{ events: Audit[] }>('/v1/admin/audit', {}, mode).then((value) => setEvents(value.events)); }, [mode]);
   return <Panel title="Immutable action trail" subtitle="Actor, decision, target, reason and time"><Table headers={['Time', 'Actor', 'Action', 'Target', 'Reason']}>{events.map((item) => <tr key={item.id}><td>{date(item.createdAt)}</td><td>{item.actorId}</td><td><strong>{item.action.replaceAll('_', ' ')}</strong></td><td>{item.targetType}<small>{item.targetId}</small></td><td>{item.reason}</td></tr>)}</Table></Panel>;
+}
+
+function ManualAdjustments({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
+  const [userId, setUserId] = useState('');
+  const [amount, setAmount] = useState('');
+  const [direction, setDirection] = useState<'CREDIT' | 'DEBIT'>('CREDIT');
+  const [reason, setReason] = useState('');
+  const [reference, setReference] = useState('');
+  const [history, setHistory] = useState<Array<Record<string, unknown>>>([]);
+  const [busy, setBusy] = useState(false);
+  const loadHistory = () => request<{ adjustments: Array<Record<string, unknown>> }>('/v1/admin/adjustments', {}, mode).then((v) => setHistory(v.adjustments)).catch(() => {});
+  useEffect(() => { void loadHistory(); }, [mode]);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!userId.trim() || !amount || !reason.trim()) { notice({ tone: 'warning', text: 'User ID, amount, and reason are all required.' }); return; }
+    setBusy(true);
+    try {
+      const adj: WalletAdjustment = { userId: userId.trim(), amount: Number(amount), direction, reason: reason.trim(), reference: reference.trim() || `ADJ-${Date.now()}` };
+      await request('/v1/admin/adjustments', { method: 'POST', body: JSON.stringify(adj) }, mode);
+      notice({ tone: 'success', text: `Wallet ${direction.toLowerCase()} of ₦${Number(amount).toLocaleString()} applied to ${userId}. Audit record created.` });
+      setUserId(''); setAmount(''); setReason(''); setReference('');
+      void loadHistory();
+    } catch (error) { notice({ tone: 'warning', text: error instanceof Error ? error.message : 'Adjustment failed.' }); }
+    finally { setBusy(false); }
+  };
+  return <div className="stack">
+    <Panel title="Manual wallet adjustment" subtitle="Credit or debit a user wallet directly — every action is immutably logged in the audit trail">
+      <div className="notice warning" style={{ marginBottom: 16 }}><span>Only use this for verified bank transfer confirmations, dispute resolutions, or error corrections. Never for promotions — use the Rewards module instead.</span></div>
+      <form className="campaign-form" onSubmit={submit}>
+        <label>User ID <input required value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="User ID from the Users & KYC page" /></label>
+        <label>Direction
+          <select value={direction} onChange={(e) => setDirection(e.target.value as 'CREDIT' | 'DEBIT')}>
+            <option value="CREDIT">Credit (add money to wallet)</option>
+            <option value="DEBIT">Debit (remove money from wallet)</option>
+          </select>
+        </label>
+        <label>Amount (₦) <input required type="number" min="1" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount in Naira" /></label>
+        <label>Internal reference <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Bank ref, ticket ID, etc. (auto-generated if blank)" /></label>
+        <label className="wide">Reason (required for audit) <textarea required value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Manual confirmation of bank transfer REF-12345 dated 2026-06-19 confirmed by operator Lamarr" /></label>
+        <div className="wide actions"><button type="submit" className={direction === 'DEBIT' ? 'danger' : 'table-action'} disabled={busy}>{busy ? 'Applying…' : `Apply ${direction.toLowerCase()}`}</button></div>
+      </form>
+    </Panel>
+    <Panel title="Adjustment history" subtitle="All manual wallet changes in chronological order">
+      {history.length ? <SimpleRecords records={history} preferred={['reference', 'userId', 'direction', 'amountNgn', 'reason', 'operatorId', 'createdAt']} /> : <p>No manual adjustments have been made in this environment.</p>}
+    </Panel>
+  </div>;
+}
+
+function PlansAdmin({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
+  const [subs, setSubs] = useState<PlanSubscription[]>([]);
+  const [userId, setUserId] = useState('');
+  const [plan, setPlan] = useState('PRO');
+  const [months, setMonths] = useState(1);
+  const load = () => request<{ subscriptions: PlanSubscription[] }>(`/v1/admin/subscriptions?mode=${mode}`, {}, mode).then((v) => setSubs(v.subscriptions)).catch(() => {});
+  useEffect(() => { void load(); }, [mode]);
+  const assign = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      await request('/v1/admin/subscriptions', { method: 'POST', body: JSON.stringify({ userId: userId.trim(), plan, durationMonths: months, source: 'ADMIN_MANUAL', reason: `Manual plan assignment by admin` }) }, mode);
+      notice({ tone: 'success', text: `${plan} plan assigned to ${userId} for ${months} month(s).` });
+      setUserId(''); void load();
+    } catch (error) { notice({ tone: 'warning', text: error instanceof Error ? error.message : 'Plan assignment failed.' }); }
+  };
+  const revoke = async (sub: PlanSubscription) => {
+    try {
+      await request(`/v1/admin/subscriptions/${sub.id}`, { method: 'DELETE', body: JSON.stringify({ reason: 'Revoked by administrator' }) }, mode);
+      notice({ tone: 'success', text: `${sub.plan} plan revoked for ${sub.userName}.` });
+      void load();
+    } catch (error) { notice({ tone: 'warning', text: error instanceof Error ? error.message : 'Revoke failed.' }); }
+  };
+  return <div className="stack">
+    <Panel title="Assign plan manually" subtitle="Assign Pro or Elite to a user without requiring payment — common for VIP, testers, or dispute resolutions">
+      <form className="campaign-form" onSubmit={assign}>
+        <label>User ID <input required value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="Paste user ID from Users & KYC" /></label>
+        <label>Plan
+          <select value={plan} onChange={(e) => setPlan(e.target.value)}>
+            <option value="FREE">Free (downgrade)</option>
+            <option value="PRO">Pro — higher limits, analytics</option>
+            <option value="ELITE">Elite — all features, VIP support</option>
+          </select>
+        </label>
+        <label>Duration (months) <input type="number" min="1" max="24" value={months} onChange={(e) => setMonths(Number(e.target.value))} /></label>
+        <div className="wide actions"><button type="submit" className="table-action">Assign plan</button></div>
+      </form>
+    </Panel>
+    <Panel title="Active subscriptions" subtitle="Payment source, plan tier, and expiry across Demo and Live">
+      <Table headers={['User', 'Plan', 'Source', 'Started', 'Expires', 'Status', 'Action']}>
+        {subs.map((sub) => <tr key={sub.id}>
+          <td><strong>{sub.userName}</strong><small>{sub.email}</small></td>
+          <td><Badge value={sub.plan} /></td>
+          <td><small>{sub.source}</small></td>
+          <td>{date(sub.startedAt)}</td>
+          <td>{sub.expiresAt ? date(sub.expiresAt) : 'Lifetime'}</td>
+          <td><Badge value={sub.status} /></td>
+          <td>{sub.plan !== 'FREE' && <button className="table-danger" onClick={() => revoke(sub)}>Revoke</button>}</td>
+        </tr>)}
+      </Table>
+    </Panel>
+  </div>;
+}
+
+function ReferralsAdmin({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
+  const [referrals, setReferrals] = useState<Referral[]>([]);
+  const [query, setQuery] = useState('');
+  const load = () => request<{ referrals: Referral[] }>(`/v1/admin/referrals?mode=${mode}&q=${encodeURIComponent(query)}`, {}, mode).then((v) => setReferrals(v.referrals)).catch(() => {});
+  useEffect(() => { void load(); }, [mode]);
+  const payBonus = async (ref: Referral) => {
+    try {
+      await request(`/v1/admin/referrals/${ref.id}/pay`, { method: 'POST', body: JSON.stringify({ reason: 'Manual bonus approval by admin' }) }, mode);
+      notice({ tone: 'success', text: `Referral bonus paid to ${ref.referrerName}.` });
+      void load();
+    } catch (error) { notice({ tone: 'warning', text: error instanceof Error ? error.message : 'Bonus payout failed.' }); }
+  };
+  const reject = async (ref: Referral) => {
+    try {
+      await request(`/v1/admin/referrals/${ref.id}/reject`, { method: 'POST', body: JSON.stringify({ reason: 'Rejected by admin — suspected abuse or invalid referral' }) }, mode);
+      notice({ tone: 'success', text: `Referral ${ref.id} rejected.` });
+      void load();
+    } catch (error) { notice({ tone: 'warning', text: error instanceof Error ? error.message : 'Rejection failed.' }); }
+  };
+  const pending = referrals.filter((r) => r.status === 'PENDING');
+  const paid = referrals.filter((r) => r.status === 'PAID');
+  return <div className="stack">
+    <div className="metrics">
+      <Metric label="Total referrals" value={referrals.length} icon={<Users />} />
+      <Metric label="Pending approval" value={pending.length} icon={<AlertTriangle />} />
+      <Metric label="Bonuses paid" value={paid.length} icon={<CheckCircle2 />} />
+      <Metric label="Paid volume" value={naira(paid.reduce((sum, r) => sum + Number(r.rewardPaidNgn || 0), 0))} icon={<Banknote />} />
+    </div>
+    <Panel title="Referral queue" subtitle="Review pending referrals and pay or reject bonuses">
+      <div className="toolbar">
+        <div className="search"><Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Referrer or referee name/ID" /></div>
+        <button onClick={load}>Search</button>
+      </div>
+      <Table headers={['Referrer', 'New user (referee)', 'Reward', 'Date', 'Status', 'Action']}>
+        {referrals.map((ref) => <tr key={ref.id}>
+          <td><strong>{ref.referrerName}</strong><small>{ref.referrerId}</small></td>
+          <td><strong>{ref.refereeName}</strong><small>{ref.refereeId}</small></td>
+          <td>{naira(ref.rewardPaidNgn)}</td>
+          <td>{date(ref.createdAt)}</td>
+          <td><Badge value={ref.status} /></td>
+          <td className="actions">
+            {ref.status === 'PENDING' && <>
+              <button className="table-action" onClick={() => payBonus(ref)}>Pay bonus</button>
+              <button className="table-danger" onClick={() => reject(ref)}>Reject</button>
+            </>}
+          </td>
+        </tr>)}
+      </Table>
+    </Panel>
+  </div>;
+}
+
+function SupportTickets({ mode, notice }: { mode: 'DEMO' | 'LIVE'; notice: (value: Notice) => void }) {
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [open, setOpen] = useState<SupportTicket | null>(null);
+  const [reply, setReply] = useState('');
+  const [filter, setFilter] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = () => request<{ tickets: SupportTicket[] }>(`/v1/admin/support?mode=${mode}${filter ? `&status=${filter}` : ''}`, {}, mode).then((v) => setTickets(v.tickets)).catch(() => {});
+  useEffect(() => { void load(); }, [mode, filter]);
+  const sendReply = async (ticket: SupportTicket) => {
+    if (!reply.trim()) { notice({ tone: 'warning', text: 'Reply cannot be empty.' }); return; }
+    setBusy(true);
+    try {
+      await request(`/v1/admin/support/${ticket.id}/reply`, { method: 'POST', body: JSON.stringify({ reply: reply.trim(), status: 'REPLIED' }) }, mode);
+      notice({ tone: 'success', text: `Reply sent to ${ticket.userName}. Notification dispatched.` });
+      setReply(''); setOpen(null); void load();
+    } catch (error) { notice({ tone: 'warning', text: error instanceof Error ? error.message : 'Reply failed.' }); }
+    finally { setBusy(false); }
+  };
+  const updateStatus = async (ticket: SupportTicket, status: string) => {
+    try {
+      await request(`/v1/admin/support/${ticket.id}`, { method: 'PATCH', body: JSON.stringify({ status, reason: `Status updated to ${status} by admin` }) }, mode);
+      notice({ tone: 'success', text: `Ticket ${ticket.id} → ${status}.` });
+      void load();
+    } catch (error) { notice({ tone: 'warning', text: error instanceof Error ? error.message : 'Update failed.' }); }
+  };
+  const priorityColor: Record<string, string> = { HIGH: '#f87171', MEDIUM: '#facc15', LOW: '#6b7280' };
+  const pending = tickets.filter((t) => t.status === 'OPEN' || t.status === 'PENDING');
+  return <div className="stack">
+    <div className="metrics">
+      <Metric label="Total tickets" value={tickets.length} icon={<Activity />} />
+      <Metric label="Awaiting reply" value={pending.length} icon={<AlertTriangle />} />
+      <Metric label="Resolved" value={tickets.filter((t) => t.status === 'RESOLVED').length} icon={<CheckCircle2 />} />
+    </div>
+    {open ? (
+      <Panel title={`Ticket · ${open.id}`} subtitle={`${open.userName} · ${open.category} · Priority: ${open.priority}`}>
+        <div style={{ background: 'var(--surface)', borderRadius: 10, padding: 16, marginBottom: 14 }}>
+          <p style={{ fontWeight: 700, marginBottom: 6 }}>{open.subject}</p>
+          <p style={{ color: 'var(--muted)', fontSize: 13, lineHeight: 1.6 }}>{open.body}</p>
+          <small style={{ color: 'var(--muted)' }}>{date(open.createdAt)}</small>
+        </div>
+        {open.reply ? (
+          <div style={{ background: '#0a2016', borderRadius: 10, padding: 16, marginBottom: 14, borderLeft: '3px solid var(--green)' }}>
+            <p style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 6 }}>Previous reply</p>
+            <p style={{ fontSize: 13, lineHeight: 1.6 }}>{open.reply}</p>
+          </div>
+        ) : null}
+        <form className="campaign-form" onSubmit={(e) => { e.preventDefault(); void sendReply(open); }}>
+          <label className="wide">Reply to user <textarea required value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Type your reply to the user. This will be sent as a push notification and stored in their support history." rows={5} /></label>
+          <div className="wide actions">
+            <button type="button" className="table-muted" onClick={() => { setOpen(null); setReply(''); }}>Cancel</button>
+            <button type="button" className="table-muted" onClick={() => updateStatus(open, 'IN_PROGRESS')}>Mark In Progress</button>
+            <button type="button" className="table-action" onClick={() => updateStatus(open, 'RESOLVED')}>Mark Resolved</button>
+            <button type="submit" className="table-action" disabled={busy}>{busy ? 'Sending…' : 'Send reply'}</button>
+          </div>
+        </form>
+      </Panel>
+    ) : (
+      <Panel title="Support ticket queue" subtitle="Click a ticket to reply. All replies trigger a push notification to the user.">
+        <div className="toolbar">
+          <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="">All statuses</option>
+            <option value="OPEN">Open</option>
+            <option value="IN_PROGRESS">In progress</option>
+            <option value="REPLIED">Replied</option>
+            <option value="RESOLVED">Resolved</option>
+          </select>
+          <Badge value={`${pending.length} PENDING`} />
+        </div>
+        <Table headers={['Ticket', 'User', 'Category', 'Priority', 'Status', 'Created', 'Action']}>
+          {tickets.map((ticket) => <tr key={ticket.id} style={{ cursor: 'pointer' }}>
+            <td><strong>{ticket.subject.slice(0, 40)}{ticket.subject.length > 40 ? '…' : ''}</strong><small>{ticket.id}</small></td>
+            <td>{ticket.userName}<small>{ticket.userId}</small></td>
+            <td>{ticket.category}</td>
+            <td><span style={{ color: priorityColor[ticket.priority] || '#6b7280', fontWeight: 700 }}>{ticket.priority}</span></td>
+            <td><Badge value={ticket.status} /></td>
+            <td>{date(ticket.createdAt)}</td>
+            <td><button className="table-action" onClick={() => { setOpen(ticket); setReply(''); }}>Reply</button></td>
+          </tr>)}
+        </Table>
+        {tickets.length === 0 && <p>No support tickets in this environment yet.</p>}
+      </Panel>
+    )}
+  </div>;
 }
 
 function OperationalModule({ name, mode }: { name: string; mode: string }) {
