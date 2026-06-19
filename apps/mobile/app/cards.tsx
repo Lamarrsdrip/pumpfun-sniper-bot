@@ -16,7 +16,7 @@ export default function CardsScreen() {
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: dark.white, fontSize: 19, fontWeight: '900' }}>MemeZo</Text><StatusPill label="PREVIEW" tone="warning" /></View>
       <View><Text style={{ color: '#C8D7D0', fontSize: 10 }}>AVAILABLE CARD BALANCE</Text><Text style={{ color: dark.white, fontSize: 25, fontWeight: '900', paddingTop: 4 }}>$0.00</Text></View>
       <Text style={{ color: dark.white, fontSize: 21, letterSpacing: 2 }}>••••  ••••  ••••  ••••</Text>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: '#CFD5D1' }}>ADA NWOSU</Text><Text style={{ color: '#CFD5D1' }}>--/--</Text></View>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: '#CFD5D1' }}>YOUR NAME</Text><Text style={{ color: '#CFD5D1' }}>--/--</Text></View>
     </LinearGradient>
     <ProviderNotice title="Card issuer not connected" body="No card number, balance or card transaction exists until an approved issuing provider confirms creation." />
     <View style={{ flexDirection: 'row', gap: 10 }}><CardAction icon="add-circle-outline" label="Top up" disabled /><CardAction icon="arrow-down-circle-outline" label="Withdraw" disabled /><CardAction icon="refresh-outline" label="Reissue" disabled /></View>
@@ -30,7 +30,7 @@ export default function CardsScreen() {
     {message ? <Text selectable style={{ color: dark.yellow }}>{message}</Text> : null}
     <Button title="Create virtual card" onPress={() => setMessage('Card creation remains unavailable until the card provider passes a live health check.')} />
     <SectionHeader title="Card activity" />
-    <TransactionRow item={{ title: 'No issued card yet', detail: 'Transactions appear after provider confirmation', amount: '$0.00', time: '—', status: 'UNAVAILABLE', kind: 'card' }} />
+    <TransactionRow item={{ id: 'card-placeholder', title: 'No issued card yet', detail: 'Transactions appear after provider confirmation', amount: '$0.00', time: '—', status: 'UNAVAILABLE', kind: 'card' }} />
   </Page>;
 }
 function Toggle({ title, body, value, set, disabled }: { title: string; body: string; value: boolean; set: (value: boolean) => void; disabled?: boolean }) { return <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}><View style={{ flex: 1 }}><Text style={{ color: dark.text, fontWeight: '900' }}>{title}</Text><Text style={{ color: dark.muted, fontSize: 10, paddingTop: 3 }}>{body}</Text></View><Switch value={value} onValueChange={set} disabled={disabled} trackColor={{ true: dark.greenDeep }} /></View>; }
